@@ -22,53 +22,46 @@ It assumes there is a single task returned and does not do error checking (eg if
 
 This DAG relies on the following environment variables:
 
-* SOURCE_LOCATION_URI - Source location URI, usually on premisis SMB or NFS
+* SOURCE_LOCATION_URI - Source location URI, usually on premises SMB or NFS
 * DESTINATION_LOCATION_URI - Destination location URI, usually S3
 """
 
+from datetime import datetime
 from os import getenv
 
-from airflow import models, utils
-from airflow.providers.amazon.aws.operators.datasync import AWSDataSyncOperator
+from airflow import models
+from airflow.providers.amazon.aws.operators.datasync import DataSyncOperator
 
 # [START howto_operator_datasync_1_args_1]
-TASK_ARN = getenv(
-    "TASK_ARN", "my_aws_datasync_task_arn")
+TASK_ARN = getenv("TASK_ARN", "my_aws_datasync_task_arn")
 # [END howto_operator_datasync_1_args_1]
 
 # [START howto_operator_datasync_1_args_2]
-SOURCE_LOCATION_URI = getenv(
-    "SOURCE_LOCATION_URI", "smb://hostname/directory/")
+SOURCE_LOCATION_URI = getenv("SOURCE_LOCATION_URI", "smb://hostname/directory/")
 
-DESTINATION_LOCATION_URI = getenv(
-    "DESTINATION_LOCATION_URI", "s3://mybucket/prefix")
+DESTINATION_LOCATION_URI = getenv("DESTINATION_LOCATION_URI", "s3://mybucket/prefix")
 # [END howto_operator_datasync_1_args_2]
 
-default_args = {"start_date": utils.dates.days_ago(1)}
 
 with models.DAG(
     "example_datasync_1_1",
-    default_args=default_args,
     schedule_interval=None,  # Override to match your needs
+    start_date=datetime(2021, 1, 1),
+    catchup=False,
     tags=['example'],
 ) as dag:
 
     # [START howto_operator_datasync_1_1]
-    datasync_task_1 = AWSDataSyncOperator(
-        aws_conn_id="aws_default",
-        task_id="datasync_task_1",
-        task_arn=TASK_ARN
-    )
+    datasync_task_1 = DataSyncOperator(task_id="datasync_task_1", task_arn=TASK_ARN)
     # [END howto_operator_datasync_1_1]
 
 with models.DAG(
     "example_datasync_1_2",
-    default_args=default_args,
+    start_date=datetime(2021, 1, 1),
     schedule_interval=None,  # Override to match your needs
 ) as dag:
     # [START howto_operator_datasync_1_2]
-    datasync_task_2 = AWSDataSyncOperator(
-        aws_conn_id="aws_default",
+    datasync_task_2 = DataSyncOperator(
         task_id="datasync_task_2",
         source_location_uri=SOURCE_LOCATION_URI,
         destination_location_uri=DESTINATION_LOCATION_URI,

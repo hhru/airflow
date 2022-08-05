@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -68,7 +67,7 @@ def on_pre_execution(**kwargs):
     for callback in __pre_exec_callbacks:
         try:
             callback(**kwargs)
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             logging.exception('Failed on pre-execution callback using %s', callback)
 
 
@@ -86,7 +85,7 @@ def on_post_execution(**kwargs):
     for callback in __post_exec_callbacks:
         try:
             callback(**kwargs)
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             logging.exception('Failed on post-execution callback using %s', callback)
 
 
@@ -102,7 +101,7 @@ def default_action_log(log, **_):
     try:
         with create_session() as session:
             session.add(log)
-    except Exception as error:  # pylint: disable=broad-except
+    except Exception as error:
         logging.warning("Failed to log action with %s", error)
 
 

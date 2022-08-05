@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,19 +17,19 @@
 # under the License.
 #
 
-"""This module is deprecated. Please use:
+"""
+This module is deprecated. Please use:
 
-  - `airflow.providers.amazon.aws.operators.batch`
-  - `airflow.providers.amazon.aws.hooks.batch_client`
-  - `airflow.providers.amazon.aws.hooks.batch_waiters`
+- :mod:`airflow.providers.amazon.aws.operators.batch`
+- :mod:`airflow.providers.amazon.aws.hooks.batch_client`
+- :mod:`airflow.providers.amazon.aws.hooks.batch_waiters``
 """
 
 import warnings
 
-from typing_extensions import Protocol, runtime_checkable
-
 from airflow.providers.amazon.aws.hooks.batch_client import AwsBatchProtocol
 from airflow.providers.amazon.aws.operators.batch import AwsBatchOperator
+from airflow.typing_compat import Protocol, runtime_checkable
 
 warnings.warn(
     "This module is deprecated. "
@@ -44,7 +43,8 @@ warnings.warn(
 
 class AWSBatchOperator(AwsBatchOperator):
     """
-    This class is deprecated. Please use `airflow.providers.amazon.aws.operators.batch.AwsBatchOperator`.
+    This class is deprecated. Please use
+    `airflow.providers.amazon.aws.operators.batch.AwsBatchOperator`.
     """
 
     def __init__(self, *args, **kwargs):
@@ -60,7 +60,8 @@ class AWSBatchOperator(AwsBatchOperator):
 @runtime_checkable
 class BatchProtocol(AwsBatchProtocol, Protocol):
     """
-    This class is deprecated. Please use `airflow.providers.amazon.aws.hooks.batch_client.AwsBatchProtocol`.
+    This class is deprecated. Please use
+    `airflow.providers.amazon.aws.hooks.batch_client.AwsBatchProtocol`.
     """
 
     # A Protocol cannot be instantiated

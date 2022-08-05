@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,14 +16,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""This module is deprecated. Please use `airflow.providers.apache.hdfs.sensors.hdfs`."""
+"""This module is deprecated. Please use :mod:`airflow.providers.apache.hdfs.sensors.hdfs`."""
 
 import warnings
 
-# pylint: disable=unused-import
 from airflow.providers.apache.hdfs.sensors.hdfs import HdfsSensor  # noqa
 
 warnings.warn(
     "This module is deprecated. Please use `airflow.providers.apache.hdfs.sensors.hdfs`.",
-    DeprecationWarning, stacklevel=2
+    DeprecationWarning,
+    stacklevel=2,
 )

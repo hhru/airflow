@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,11 +16,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import json
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from airflow.models import BaseOperator
 from airflow.providers.apache.druid.hooks.druid import DruidHook
-from airflow.utils.decorators import apply_defaults
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class DruidOperator(BaseOperator):
@@ -29,28 +30,37 @@ class DruidOperator(BaseOperator):
     Allows to submit a task directly to druid
 
     :param json_index_file: The filepath to the druid index specification
-    :type json_index_file: str
     :param druid_ingest_conn_id: The connection id of the Druid overlord which
         accepts index jobs
-    :type druid_ingest_conn_id: str
+    :param timeout: The interval (in seconds) between polling the Druid job for the status
+        of the ingestion job. Must be greater than or equal to 1
+    :param max_ingestion_time: The maximum ingestion time before assuming the job failed
     """
-    template_fields = ('json_index_file',)
-    template_ext = ('.json',)
 
-    @apply_defaults
-    def __init__(self, json_index_file,
-                 druid_ingest_conn_id='druid_ingest_default',
-                 max_ingestion_time=None,
-                 *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    template_fields: Sequence[str] = ('json_index_file',)
+    template_ext: Sequence[str] = ('.json',)
+    template_fields_renderers = {'json_index_file': 'json'}
+
+    def __init__(
+        self,
+        *,
+        json_index_file: str,
+        druid_ingest_conn_id: str = 'druid_ingest_default',
+        timeout: int = 1,
+        max_ingestion_time: Optional[int] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
         self.json_index_file = json_index_file
         self.conn_id = druid_ingest_conn_id
+        self.timeout = timeout
         self.max_ingestion_time = max_ingestion_time
 
-    def execute(self, context):
+    def execute(self, context: "Context") -> None:
         hook = DruidHook(
             druid_ingest_conn_id=self.conn_id,
-            max_ingestion_time=self.max_ingestion_time
+            timeout=self.timeout,
+            max_ingestion_time=self.max_ingestion_time,
         )
         self.log.info("Submitting %s", self.json_index_file)
-        hook.submit_indexing_job(json.loads(self.json_index_file))
+        hook.submit_indexing_job(self.json_index_file)

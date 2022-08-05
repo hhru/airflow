@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,10 +17,9 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
-import mock
-
-from airflow.providers.amazon.aws.operators.s3_list import S3ListOperator
+from airflow.providers.amazon.aws.operators.s3 import S3ListOperator
 
 TASK_ID = 'test-s3-list-operator'
 BUCKET = 'test-bucket'
@@ -31,20 +29,16 @@ MOCK_FILES = ["TEST1.csv", "TEST2.csv", "TEST3.csv"]
 
 
 class TestS3ListOperator(unittest.TestCase):
-    @mock.patch('airflow.providers.amazon.aws.operators.s3_list.S3Hook')
+    @mock.patch('airflow.providers.amazon.aws.operators.s3.S3Hook')
     def test_execute(self, mock_hook):
 
         mock_hook.return_value.list_keys.return_value = MOCK_FILES
 
-        operator = S3ListOperator(
-            task_id=TASK_ID, bucket=BUCKET, prefix=PREFIX, delimiter=DELIMITER)
+        operator = S3ListOperator(task_id=TASK_ID, bucket=BUCKET, prefix=PREFIX, delimiter=DELIMITER)
 
         files = operator.execute(None)
 
         mock_hook.return_value.list_keys.assert_called_once_with(
-            bucket_name=BUCKET, prefix=PREFIX, delimiter=DELIMITER)
-        self.assertEqual(sorted(files), sorted(MOCK_FILES))
-
-
-if __name__ == '__main__':
-    unittest.main()
+            bucket_name=BUCKET, prefix=PREFIX, delimiter=DELIMITER
+        )
+        assert sorted(files) == sorted(MOCK_FILES)

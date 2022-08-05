@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -20,22 +19,19 @@
 """
 Example Airflow DAG that shows the complex DAG structure.
 """
+import pendulum
 
 from airflow import models
 from airflow.models.baseoperator import chain
 from airflow.operators.bash import BashOperator
-from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
-
-default_args = {"start_date": days_ago(1)}
 
 with models.DAG(
     dag_id="example_complex",
-    default_args=default_args,
     schedule_interval=None,
-    tags=['example'],
+    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+    catchup=False,
+    tags=['example', 'example2', 'example3'],
 ) as dag:
-
     # Create
     create_entry_group = BashOperator(task_id="create_entry_group", bash_command="echo create_entry_group")
 
@@ -82,7 +78,7 @@ with models.DAG(
     )
 
     create_tag_template_field_result2 = BashOperator(
-        task_id="create_tag_template_field_result", bash_command="echo create_tag_template_field_result"
+        task_id="create_tag_template_field_result2", bash_command="echo create_tag_template_field_result"
     )
 
     # Delete
@@ -134,7 +130,7 @@ with models.DAG(
     )
 
     # Search
-    search_catalog = PythonOperator(task_id="search_catalog", python_callable=lambda: print("search_catalog"))
+    search_catalog = BashOperator(task_id="search_catalog", bash_command="echo search_catalog")
 
     search_catalog_result = BashOperator(
         task_id="search_catalog_result", bash_command="echo search_catalog_result"

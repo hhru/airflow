@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -22,7 +21,7 @@ import unittest
 
 import pytest
 
-from airflow import DAG
+from airflow.models.dag import DAG
 from airflow.providers.redis.hooks.redis import RedisHook
 from airflow.providers.redis.sensors.redis_key import RedisKeySensor
 from airflow.utils import timezone
@@ -32,29 +31,18 @@ DEFAULT_DATE = timezone.datetime(2017, 1, 1)
 
 @pytest.mark.integration("redis")
 class TestRedisSensor(unittest.TestCase):
-
     def setUp(self):
-        args = {
-            'owner': 'airflow',
-            'start_date': DEFAULT_DATE
-        }
+        args = {'owner': 'airflow', 'start_date': DEFAULT_DATE}
 
         self.dag = DAG('test_dag_id', default_args=args)
         self.sensor = RedisKeySensor(
-            task_id='test_task',
-            redis_conn_id='redis_default',
-            dag=self.dag,
-            key='test_key'
+            task_id='test_task', redis_conn_id='redis_default', dag=self.dag, key='test_key'
         )
 
     def test_poke(self):
         hook = RedisHook(redis_conn_id='redis_default')
         redis = hook.get_conn()
         redis.set('test_key', 'test_value')
-        self.assertTrue(self.sensor.poke(None), "Key exists on first call.")
+        assert self.sensor.poke(None), "Key exists on first call."
         redis.delete('test_key')
-        self.assertFalse(self.sensor.poke(None), "Key does NOT exists on second call.")
-
-
-if __name__ == '__main__':
-    unittest.main()
+        assert not self.sensor.poke(None), "Key does NOT exists on second call."

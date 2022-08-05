@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,11 +16,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
 
 from airflow.exceptions import AirflowException
 from airflow.models import BaseOperator
 from airflow.providers.jira.hooks.jira import JIRAError, JiraHook
-from airflow.utils.decorators import apply_defaults
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class JiraOperator(BaseOperator):
@@ -30,37 +32,33 @@ class JiraOperator(BaseOperator):
     This operator is designed to use Jira Python SDK: http://jira.readthedocs.io
 
     :param jira_conn_id: reference to a pre-defined Jira Connection
-    :type jira_conn_id: str
     :param jira_method: method name from Jira Python SDK to be called
-    :type jira_method: str
     :param jira_method_args: required method parameters for the jira_method. (templated)
-    :type jira_method_args: dict
     :param result_processor: function to further process the response from Jira
-    :type result_processor: function
     :param get_jira_resource_method: function or operator to get jira resource
                                     on which the provided jira_method will be executed
-    :type get_jira_resource_method: function
     """
 
-    template_fields = ("jira_method_args",)
+    template_fields: Sequence[str] = ("jira_method_args",)
 
-    @apply_defaults
-    def __init__(self,
-                 jira_conn_id='jira_default',
-                 jira_method=None,
-                 jira_method_args=None,
-                 result_processor=None,
-                 get_jira_resource_method=None,
-                 *args,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        *,
+        jira_method: str,
+        jira_conn_id: str = 'jira_default',
+        jira_method_args: Optional[dict] = None,
+        result_processor: Optional[Callable] = None,
+        get_jira_resource_method: Optional[Callable] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
         self.jira_conn_id = jira_conn_id
         self.method_name = jira_method
         self.jira_method_args = jira_method_args
         self.result_processor = result_processor
         self.get_jira_resource_method = get_jira_resource_method
 
-    def execute(self, context):
+    def execute(self, context: 'Context') -> Any:
         try:
             if self.get_jira_resource_method is not None:
                 # if get_jira_resource_method is provided, jira_method will be executed on
@@ -87,7 +85,6 @@ class JiraOperator(BaseOperator):
             return jira_result
 
         except JIRAError as jira_error:
-            raise AirflowException("Failed to execute jiraOperator, error: %s"
-                                   % str(jira_error))
+            raise AirflowException(f"Failed to execute jiraOperator, error: {str(jira_error)}")
         except Exception as e:
-            raise AirflowException("Jira operator error: %s" % str(e))
+            raise AirflowException(f"Jira operator error: {str(e)}")

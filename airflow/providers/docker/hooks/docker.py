@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,37 +15,62 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Any, Dict, Optional
 
-from docker import APIClient
-from docker.errors import APIError
+from docker import APIClient  # type: ignore[attr-defined]
+from docker.constants import DEFAULT_TIMEOUT_SECONDS  # type: ignore[attr-defined]
+from docker.errors import APIError  # type: ignore[attr-defined]
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base_hook import BaseHook
+from airflow.hooks.base import BaseHook
 from airflow.utils.log.logging_mixin import LoggingMixin
 
 
 class DockerHook(BaseHook, LoggingMixin):
     """
-    Interact with a private Docker registry.
+    Interact with a Docker Daemon or Registry.
 
-    :param docker_conn_id: ID of the Airflow connection where
-        credentials and extra configuration are stored
-    :type docker_conn_id: str
+    :param docker_conn_id: The :ref:`Docker connection id <howto/connection:docker>`
+        where credentials and extra configuration are stored
     """
-    def __init__(self,
-                 docker_conn_id='docker_default',
-                 base_url=None,
-                 version=None,
-                 tls=None
-                 ):
+
+    conn_name_attr = 'docker_conn_id'
+    default_conn_name = 'docker_default'
+    conn_type = 'docker'
+    hook_name = 'Docker'
+
+    @staticmethod
+    def get_ui_field_behaviour() -> Dict[str, Any]:
+        """Returns custom field behaviour"""
+        return {
+            "hidden_fields": ['schema'],
+            "relabeling": {
+                'host': 'Registry URL',
+                'login': 'Username',
+            },
+        }
+
+    def __init__(
+        self,
+        docker_conn_id: Optional[str] = default_conn_name,
+        base_url: Optional[str] = None,
+        version: Optional[str] = None,
+        tls: Optional[str] = None,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        super().__init__()
         if not base_url:
             raise AirflowException('No Docker base URL provided')
         if not version:
             raise AirflowException('No Docker API version provided')
 
+        if not docker_conn_id:
+            raise AirflowException('No Docker connection id provided')
+
         conn = self.get_connection(docker_conn_id)
+
         if not conn.host:
-            raise AirflowException('No Docker registry URL provided')
+            raise AirflowException('No Docker URL provided')
         if not conn.login:
             raise AirflowException('No username provided')
         extra_options = conn.extra_dejson
@@ -54,35 +78,34 @@ class DockerHook(BaseHook, LoggingMixin):
         self.__base_url = base_url
         self.__version = version
         self.__tls = tls
+        self.__timeout = timeout
         if conn.port:
-            self.__registry = "{}:{}".format(conn.host, conn.port)
+            self.__registry = f"{conn.host}:{conn.port}"
         else:
             self.__registry = conn.host
         self.__username = conn.login
         self.__password = conn.password
         self.__email = extra_options.get('email')
-        self.__reauth = False if extra_options.get('reauth') == 'no' else True
+        self.__reauth = extra_options.get('reauth') != 'no'
 
-    def get_conn(self):
+    def get_conn(self) -> APIClient:
         client = APIClient(
-            base_url=self.__base_url,
-            version=self.__version,
-            tls=self.__tls
+            base_url=self.__base_url, version=self.__version, tls=self.__tls, timeout=self.__timeout
         )
         self.__login(client)
         return client
 
-    def __login(self, client):
-        self.log.debug('Logging into Docker registry')
+    def __login(self, client) -> None:
+        self.log.debug('Logging into Docker')
         try:
             client.login(
                 username=self.__username,
                 password=self.__password,
                 registry=self.__registry,
                 email=self.__email,
-                reauth=self.__reauth
+                reauth=self.__reauth,
             )
             self.log.debug('Login successful')
         except APIError as docker_error:
-            self.log.error('Docker registry login failed: %s', str(docker_error))
-            raise AirflowException('Docker registry login failed: %s', str(docker_error))
+            self.log.error('Docker login failed: %s', str(docker_error))
+            raise AirflowException(f'Docker login failed: {docker_error}')

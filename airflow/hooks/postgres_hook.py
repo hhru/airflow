@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,14 +15,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""This module is deprecated. Please use `airflow.providers.postgres.hooks.postgres`."""
+"""This module is deprecated. Please use :mod:`airflow.providers.postgres.hooks.postgres`."""
 
 import warnings
 
-# pylint: disable=unused-import
 from airflow.providers.postgres.hooks.postgres import PostgresHook  # noqa
 
 warnings.warn(
     "This module is deprecated. Please use `airflow.providers.postgres.hooks.postgres`.",
-    DeprecationWarning, stacklevel=2
+    DeprecationWarning,
+    stacklevel=2,
 )

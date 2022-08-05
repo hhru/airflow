@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -22,16 +21,19 @@ import unittest
 from unittest.mock import patch
 
 from azure.mgmt.containerinstance.models import (
-    Container, ContainerGroup, Logs, ResourceRequests, ResourceRequirements,
+    Container,
+    ContainerGroup,
+    Logs,
+    ResourceRequests,
+    ResourceRequirements,
 )
 
 from airflow.models import Connection
-from airflow.providers.microsoft.azure.hooks.azure_container_instance import AzureContainerInstanceHook
+from airflow.providers.microsoft.azure.hooks.container_instance import AzureContainerInstanceHook
 from airflow.utils import db
 
 
 class TestAzureContainerInstanceHook(unittest.TestCase):
-
     def setUp(self):
         db.merge_conn(
             Connection(
@@ -39,16 +41,14 @@ class TestAzureContainerInstanceHook(unittest.TestCase):
                 conn_type='azure_container_instances',
                 login='login',
                 password='key',
-                extra=json.dumps({'tenantId': 'tenant_id',
-                                  'subscriptionId': 'subscription_id'})
+                extra=json.dumps({'tenantId': 'tenant_id', 'subscriptionId': 'subscription_id'}),
             )
         )
 
-        self.resources = ResourceRequirements(requests=ResourceRequests(
-            memory_in_gb='4',
-            cpu='1'))
-        with patch('azure.common.credentials.ServicePrincipalCredentials.__init__',
-                   autospec=True, return_value=None):
+        self.resources = ResourceRequirements(requests=ResourceRequests(memory_in_gb='4', cpu='1'))
+        with patch(
+            'azure.common.credentials.ServicePrincipalCredentials.__init__', autospec=True, return_value=None
+        ):
             with patch('azure.mgmt.containerinstance.ContainerInstanceManagementClient'):
                 self.hook = AzureContainerInstanceHook(conn_id='azure_container_instance_test')
 
@@ -71,7 +71,7 @@ class TestAzureContainerInstanceHook(unittest.TestCase):
 
         logs = self.hook.get_logs('resource_group', 'name', 'name')
 
-        self.assertSequenceEqual(logs, expected_messages)
+        assert logs == expected_messages
 
     @patch('azure.mgmt.containerinstance.operations.ContainerGroupsOperations.delete')
     def test_delete(self, delete_mock):
@@ -80,16 +80,20 @@ class TestAzureContainerInstanceHook(unittest.TestCase):
 
     @patch('azure.mgmt.containerinstance.operations.ContainerGroupsOperations.list_by_resource_group')
     def test_exists_with_existing(self, list_mock):
-        list_mock.return_value = [ContainerGroup(os_type='Linux',
-                                                 containers=[Container(name='test1',
-                                                                       image='hello-world',
-                                                                       resources=self.resources)])]
-        self.assertFalse(self.hook.exists('test', 'test1'))
+        list_mock.return_value = [
+            ContainerGroup(
+                os_type='Linux',
+                containers=[Container(name='test1', image='hello-world', resources=self.resources)],
+            )
+        ]
+        assert not self.hook.exists('test', 'test1')
 
     @patch('azure.mgmt.containerinstance.operations.ContainerGroupsOperations.list_by_resource_group')
     def test_exists_with_not_existing(self, list_mock):
-        list_mock.return_value = [ContainerGroup(os_type='Linux',
-                                                 containers=[Container(name='test1',
-                                                                       image='hello-world',
-                                                                       resources=self.resources)])]
-        self.assertFalse(self.hook.exists('test', 'not found'))
+        list_mock.return_value = [
+            ContainerGroup(
+                os_type='Linux',
+                containers=[Container(name='test1', image='hello-world', resources=self.resources)],
+            )
+        ]
+        assert not self.hook.exists('test', 'not found')

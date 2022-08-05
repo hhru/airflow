@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,40 +16,40 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import TYPE_CHECKING, List, Sequence, Union
+
 from airflow.providers.redis.hooks.redis import RedisHook
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.base import BaseSensorOperator
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class RedisPubSubSensor(BaseSensorOperator):
-
     """
     Redis sensor for reading a message from pub sub channels
 
     :param channels: The channels to be subscribed to (templated)
-    :type channels: str or list of str
     :param redis_conn_id: the redis connection id
-    :type redis_conn_id: str
     """
-    template_fields = ('channels',)
+
+    template_fields: Sequence[str] = ('channels',)
     ui_color = '#f0eee4'
 
-    @apply_defaults
-    def __init__(self, channels, redis_conn_id, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *, channels: Union[List[str], str], redis_conn_id: str, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.channels = channels
         self.redis_conn_id = redis_conn_id
         self.pubsub = RedisHook(redis_conn_id=self.redis_conn_id).get_conn().pubsub()
         self.pubsub.subscribe(self.channels)
 
-    def poke(self, context):
+    def poke(self, context: 'Context') -> bool:
         """
         Check for message on subscribed channels and write to xcom the message with key ``message``
 
         An example of message ``{'type': 'message', 'pattern': None, 'channel': b'test', 'data': b'hello'}``
 
         :param context: the context object
-        :type context: dict
         :return: ``True`` if message (with type 'message') is available or ``False`` if not
         """
         self.log.info('RedisPubSubSensor checking for message on channels: %s', self.channels)

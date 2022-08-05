@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,14 +15,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""This module is deprecated. Please use `airflow.providers.amazon.aws.operators.emr_add_steps`."""
+"""This module is deprecated. Please use :mod:`airflow.providers.amazon.aws.operators.emr_add_steps`."""
 
 import warnings
 
-# pylint: disable=unused-import
 from airflow.providers.amazon.aws.operators.emr_add_steps import EmrAddStepsOperator  # noqa
 
 warnings.warn(
     "This module is deprecated. Please use `airflow.providers.amazon.aws.operators.emr_add_steps`.",
-    DeprecationWarning, stacklevel=2
+    DeprecationWarning,
+    stacklevel=2,
 )

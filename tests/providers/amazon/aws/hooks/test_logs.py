@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-
+import time
 import unittest
 
 from airflow.providers.amazon.aws.hooks.logs import AwsLogsHook
@@ -29,13 +28,11 @@ except ImportError:
 
 
 class TestAwsLogsHook(unittest.TestCase):
-
     @unittest.skipIf(mock_logs is None, 'mock_logs package not present')
     @mock_logs
     def test_get_conn_returns_a_boto3_connection(self):
-        hook = AwsLogsHook(aws_conn_id='aws_default',
-                           region_name="us-east-1")
-        self.assertIsNotNone(hook.get_conn())
+        hook = AwsLogsHook(aws_conn_id='aws_default', region_name="us-east-1")
+        assert hook.get_conn() is not None
 
     @unittest.skipIf(mock_logs is None, 'mock_logs package not present')
     # moto.logs does not support proper pagination so we cannot test that yet
@@ -45,29 +42,20 @@ class TestAwsLogsHook(unittest.TestCase):
         log_group_name = 'example-group'
         log_stream_name = 'example-log-stream'
 
-        hook = AwsLogsHook(aws_conn_id='aws_default',
-                           region_name="us-east-1")
+        hook = AwsLogsHook(aws_conn_id='aws_default', region_name="us-east-1")
 
         # First we create some log events
         conn = hook.get_conn()
         conn.create_log_group(logGroupName=log_group_name)
         conn.create_log_stream(logGroupName=log_group_name, logStreamName=log_stream_name)
 
-        input_events = [
-            {
-                'timestamp': 1,
-                'message': 'Test Message 1'
-            }
-        ]
+        input_events = [{'timestamp': int(time.time()) * 1000, 'message': 'Test Message 1'}]
 
-        conn.put_log_events(logGroupName=log_group_name,
-                            logStreamName=log_stream_name,
-                            logEvents=input_events)
-
-        events = hook.get_log_events(
-            log_group=log_group_name,
-            log_stream_name=log_stream_name
+        conn.put_log_events(
+            logGroupName=log_group_name, logStreamName=log_stream_name, logEvents=input_events
         )
+
+        events = hook.get_log_events(log_group=log_group_name, log_stream_name=log_stream_name)
 
         # Iterate through entire generator
         events = list(events)
@@ -76,7 +64,3 @@ class TestAwsLogsHook(unittest.TestCase):
         assert count == 1
         assert events[0]['timestamp'] == input_events[0]['timestamp']
         assert events[0]['message'] == input_events[0]['message']
-
-
-if __name__ == '__main__':
-    unittest.main()

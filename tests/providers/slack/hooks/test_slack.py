@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,84 +17,119 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
-import mock
+import pytest
+from slack_sdk.errors import SlackApiError
 
 from airflow.exceptions import AirflowException
 from airflow.providers.slack.hooks.slack import SlackHook
 
 
 class TestSlackHook(unittest.TestCase):
-    def test_init_with_token_only(self):
+    def test_get_token_with_token_only(self):
+        """tests `__get_token` method when only token is provided"""
+        # Given
         test_token = 'test_token'
-        slack_hook = SlackHook(token=test_token, slack_conn_id=None)
+        test_conn_id = None
 
-        self.assertEqual(slack_hook.token, test_token)
+        # Run
+        hook = SlackHook(test_token, test_conn_id)
 
+        # Assert
+        output = hook.token
+        expected = test_token
+        assert output == expected
+
+    @mock.patch('airflow.providers.slack.hooks.slack.WebClient')
     @mock.patch('airflow.providers.slack.hooks.slack.SlackHook.get_connection')
-    def test_init_with_valid_slack_conn_id_only(self, get_connection_mock):
+    def test_get_token_with_valid_slack_conn_id_only(self, get_connection_mock, mock_slack_client):
+        """tests `__get_token` method when only connection is provided"""
+        # Given
+        test_token = None
+        test_conn_id = 'x'
         test_password = 'test_password'
+
+        # Mock
         get_connection_mock.return_value = mock.Mock(password=test_password)
 
-        test_slack_conn_id = 'test_slack_conn_id'
-        slack_hook = SlackHook(token=None, slack_conn_id=test_slack_conn_id)
+        # Run
+        hook = SlackHook(test_token, test_conn_id)
 
-        get_connection_mock.assert_called_once_with(test_slack_conn_id)
-        self.assertEqual(slack_hook.token, test_password)
+        # Assert
+        output = hook.token
+        expected = test_password
+        assert output == expected
+        mock_slack_client.assert_called_once_with(test_password)
 
     @mock.patch('airflow.providers.slack.hooks.slack.SlackHook.get_connection')
-    def test_init_with_no_password_slack_conn_id_only(self, get_connection_mock):
+    def test_get_token_with_no_password_slack_conn_id_only(self, get_connection_mock):
+        """tests `__get_token` method when only connection is provided"""
+
+        # Mock
         conn = mock.Mock()
         del conn.password
         get_connection_mock.return_value = conn
 
-        test_slack_conn_id = 'test_slack_conn_id'
-        self.assertRaises(AirflowException, SlackHook, token=None, slack_conn_id=test_slack_conn_id)
+        # Assert
+        with pytest.raises(AirflowException):
+            SlackHook(token=None, slack_conn_id='x')
 
     @mock.patch('airflow.providers.slack.hooks.slack.SlackHook.get_connection')
-    def test_init_with_empty_password_slack_conn_id_only(self, get_connection_mock):
+    def test_get_token_with_empty_password_slack_conn_id_only(self, get_connection_mock):
+        """tests `__get_token` method when only connection is provided"""
+
+        # Mock
         get_connection_mock.return_value = mock.Mock(password=None)
 
-        test_slack_conn_id = 'test_slack_conn_id'
-        self.assertRaises(AirflowException, SlackHook, token=None, slack_conn_id=test_slack_conn_id)
+        # Assert
+        with pytest.raises(AirflowException):
+            SlackHook(token=None, slack_conn_id='x')
 
-    def test_init_with_token_and_slack_conn_id(self):
+    def test_get_token_with_token_and_slack_conn_id(self):
+        """tests `__get_token` method when both arguments are provided"""
+        # Given
+        test_token = 'test_token'
+        test_conn_id = 'x'
+
+        # Run
+        hook = SlackHook(test_token, test_conn_id)
+
+        # Assert
+        output = hook.token
+        expected = test_token
+        assert output == expected
+
+    def test_get_token_with_out_token_nor_slack_conn_id(self):
+        """tests `__get_token` method when no arguments are provided"""
+
+        with pytest.raises(AirflowException):
+            SlackHook(token=None, slack_conn_id=None)
+
+    @mock.patch('airflow.providers.slack.hooks.slack.WebClient')
+    def test_call_with_failure(self, slack_client_class_mock):
+        slack_client_mock = mock.Mock()
+        slack_client_class_mock.return_value = slack_client_mock
+        expected_exception = SlackApiError(message='foo', response='bar')
+        slack_client_mock.api_call = mock.Mock(side_effect=expected_exception)
+
         test_token = 'test_token'
         test_slack_conn_id = 'test_slack_conn_id'
         slack_hook = SlackHook(token=test_token, slack_conn_id=test_slack_conn_id)
+        test_method = 'test_method'
+        test_api_params = {'key1': 'value1', 'key2': 'value2'}
 
-        self.assertEqual(slack_hook.token, test_token)
+        with pytest.raises(SlackApiError):
+            slack_hook.call(test_method, data=test_api_params)
 
-    def test_init_with_out_token_nor_slack_conn_id(self):
-        self.assertRaises(AirflowException, SlackHook, token=None, slack_conn_id=None)
-
-    @mock.patch('airflow.providers.slack.hooks.slack.SlackClient')
-    def test_call_with_success(self, slack_client_class_mock):
+    @mock.patch('airflow.providers.slack.hooks.slack.WebClient')
+    def test_api_call(self, slack_client_class_mock):
         slack_client_mock = mock.Mock()
         slack_client_class_mock.return_value = slack_client_mock
         slack_client_mock.api_call.return_value = {'ok': True}
 
-        test_token = 'test_token'
-        test_slack_conn_id = 'test_slack_conn_id'
-        slack_hook = SlackHook(token=test_token, slack_conn_id=test_slack_conn_id)
-        test_method = 'test_method'
-        test_api_params = {'key1': 'value1', 'key2': 'value2'}
+        slack_hook = SlackHook(token='test_token')
+        test_api_json = {'channel': 'test_channel'}
 
-        slack_hook.call(test_method, test_api_params)
-
-        slack_client_class_mock.assert_called_once_with(test_token)
-        slack_client_mock.api_call.assert_called_once_with(test_method, **test_api_params)
-
-    @mock.patch('airflow.providers.slack.hooks.slack.SlackClient')
-    def test_call_with_failure(self, slack_client_class_mock):
-        slack_client_mock = mock.Mock()
-        slack_client_class_mock.return_value = slack_client_mock
-        slack_client_mock.api_call.return_value = {'ok': False, 'error': 'test_error'}
-
-        test_token = 'test_token'
-        test_slack_conn_id = 'test_slack_conn_id'
-        slack_hook = SlackHook(token=test_token, slack_conn_id=test_slack_conn_id)
-        test_method = 'test_method'
-        test_api_params = {'key1': 'value1', 'key2': 'value2'}
-
-        self.assertRaises(AirflowException, slack_hook.call, test_method, test_api_params)
+        slack_hook.call("chat.postMessage", json=test_api_json)
+        slack_client_mock.api_call.assert_called_with("chat.postMessage", json=test_api_json)

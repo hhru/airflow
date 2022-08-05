@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -21,8 +20,10 @@ import re
 import unittest
 from datetime import timedelta
 
+import pytest
+
 from airflow.exceptions import AirflowSensorTimeout
-from airflow.providers.apache.hdfs.sensors.hdfs import HdfsSensor, HdfsSensorFolder, HdfsSensorRegex
+from airflow.providers.apache.hdfs.sensors.hdfs import HdfsFolderSensor, HdfsRegexSensor, HdfsSensor
 from airflow.utils.timezone import datetime
 from tests.test_utils.hdfs_utils import FakeHDFSHook
 
@@ -31,7 +32,6 @@ TEST_DAG_ID = 'unit_test_dag'
 
 
 class TestHdfsSensor(unittest.TestCase):
-
     def setUp(self):
         self.hook = FakeHDFSHook
 
@@ -41,12 +41,14 @@ class TestHdfsSensor(unittest.TestCase):
         :return:
         """
         # When
-        task = HdfsSensor(task_id='Should_be_file_legacy',
-                          filepath='/datadirectory/datafile',
-                          timeout=1,
-                          retry_delay=timedelta(seconds=1),
-                          poke_interval=1,
-                          hook=self.hook)
+        task = HdfsSensor(
+            task_id='Should_be_file_legacy',
+            filepath='/datadirectory/datafile',
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
         task.execute(None)
 
         # Then
@@ -58,17 +60,19 @@ class TestHdfsSensor(unittest.TestCase):
         :return:
         """
         # When
-        task = HdfsSensor(task_id='Should_be_file_legacy',
-                          filepath='/datadirectory/datafile',
-                          timeout=1,
-                          file_size=20,
-                          retry_delay=timedelta(seconds=1),
-                          poke_interval=1,
-                          hook=self.hook)
+        task = HdfsSensor(
+            task_id='Should_be_file_legacy',
+            filepath='/datadirectory/datafile',
+            timeout=1,
+            file_size=20,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)
 
     def test_legacy_file_does_not_exists(self):
@@ -76,16 +80,18 @@ class TestHdfsSensor(unittest.TestCase):
         Test the legacy behaviour
         :return:
         """
-        task = HdfsSensor(task_id='Should_not_be_file_legacy',
-                          filepath='/datadirectory/not_existing_file_or_directory',
-                          timeout=1,
-                          retry_delay=timedelta(seconds=1),
-                          poke_interval=1,
-                          hook=self.hook)
+        task = HdfsSensor(
+            task_id='Should_not_be_file_legacy',
+            filepath='/datadirectory/not_existing_file_or_directory',
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)
 
 
@@ -104,13 +110,15 @@ class TestHdfsSensorFolder(unittest.TestCase):
         self.log.debug('#' * 10)
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
-        task = HdfsSensorFolder(task_id='Should_be_empty_directory',
-                                filepath='/datadirectory/empty_directory',
-                                be_empty=True,
-                                timeout=1,
-                                retry_delay=timedelta(seconds=1),
-                                poke_interval=1,
-                                hook=self.hook)
+        task = HdfsFolderSensor(
+            task_id='Should_be_empty_directory',
+            filepath='/datadirectory/empty_directory',
+            be_empty=True,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         task.execute(None)
@@ -127,17 +135,19 @@ class TestHdfsSensorFolder(unittest.TestCase):
         self.log.debug('#' * 10)
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
-        task = HdfsSensorFolder(task_id='Should_be_empty_directory_fail',
-                                filepath='/datadirectory/not_empty_directory',
-                                be_empty=True,
-                                timeout=1,
-                                retry_delay=timedelta(seconds=1),
-                                poke_interval=1,
-                                hook=self.hook)
+        task = HdfsFolderSensor(
+            task_id='Should_be_empty_directory_fail',
+            filepath='/datadirectory/not_empty_directory',
+            be_empty=True,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)
 
     def test_should_be_a_non_empty_directory(self):
@@ -149,12 +159,14 @@ class TestHdfsSensorFolder(unittest.TestCase):
         self.log.debug('#' * 10)
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
-        task = HdfsSensorFolder(task_id='Should_be_non_empty_directory',
-                                filepath='/datadirectory/not_empty_directory',
-                                timeout=1,
-                                retry_delay=timedelta(seconds=1),
-                                poke_interval=1,
-                                hook=self.hook)
+        task = HdfsFolderSensor(
+            task_id='Should_be_non_empty_directory',
+            filepath='/datadirectory/not_empty_directory',
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         task.execute(None)
@@ -171,16 +183,18 @@ class TestHdfsSensorFolder(unittest.TestCase):
         self.log.debug('#' * 10)
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
-        task = HdfsSensorFolder(task_id='Should_be_empty_directory_fail',
-                                filepath='/datadirectory/empty_directory',
-                                timeout=1,
-                                retry_delay=timedelta(seconds=1),
-                                poke_interval=1,
-                                hook=self.hook)
+        task = HdfsFolderSensor(
+            task_id='Should_be_empty_directory_fail',
+            filepath='/datadirectory/empty_directory',
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)
 
 
@@ -200,13 +214,15 @@ class TestHdfsSensorRegex(unittest.TestCase):
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
         compiled_regex = re.compile("test[1-2]file")
-        task = HdfsSensorRegex(task_id='Should_match_the_regex',
-                               filepath='/datadirectory/regex_dir',
-                               regex=compiled_regex,
-                               timeout=1,
-                               retry_delay=timedelta(seconds=1),
-                               poke_interval=1,
-                               hook=self.hook)
+        task = HdfsRegexSensor(
+            task_id='Should_match_the_regex',
+            filepath='/datadirectory/regex_dir',
+            regex=compiled_regex,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         task.execute(None)
@@ -224,17 +240,19 @@ class TestHdfsSensorRegex(unittest.TestCase):
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
         compiled_regex = re.compile("^IDoNotExist")
-        task = HdfsSensorRegex(task_id='Should_not_match_the_regex',
-                               filepath='/datadirectory/regex_dir',
-                               regex=compiled_regex,
-                               timeout=1,
-                               retry_delay=timedelta(seconds=1),
-                               poke_interval=1,
-                               hook=self.hook)
+        task = HdfsRegexSensor(
+            task_id='Should_not_match_the_regex',
+            filepath='/datadirectory/regex_dir',
+            regex=compiled_regex,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)
 
     def test_should_match_regex_and_filesize(self):
@@ -247,16 +265,18 @@ class TestHdfsSensorRegex(unittest.TestCase):
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
         compiled_regex = re.compile("test[1-2]file")
-        task = HdfsSensorRegex(task_id='Should_match_the_regex_and_filesize',
-                               filepath='/datadirectory/regex_dir',
-                               regex=compiled_regex,
-                               ignore_copying=True,
-                               ignored_ext=['_COPYING_', 'sftp'],
-                               file_size=10,
-                               timeout=1,
-                               retry_delay=timedelta(seconds=1),
-                               poke_interval=1,
-                               hook=self.hook)
+        task = HdfsRegexSensor(
+            task_id='Should_match_the_regex_and_filesize',
+            filepath='/datadirectory/regex_dir',
+            regex=compiled_regex,
+            ignore_copying=True,
+            ignored_ext=['_COPYING_', 'sftp'],
+            file_size=10,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         task.execute(None)
@@ -274,18 +294,20 @@ class TestHdfsSensorRegex(unittest.TestCase):
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
         compiled_regex = re.compile("test[1-2]file")
-        task = HdfsSensorRegex(task_id='Should_match_the_regex_but_filesize',
-                               filepath='/datadirectory/regex_dir',
-                               regex=compiled_regex,
-                               file_size=20,
-                               timeout=1,
-                               retry_delay=timedelta(seconds=1),
-                               poke_interval=1,
-                               hook=self.hook)
+        task = HdfsRegexSensor(
+            task_id='Should_match_the_regex_but_filesize',
+            filepath='/datadirectory/regex_dir',
+            regex=compiled_regex,
+            file_size=20,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)
 
     def test_should_match_regex_but_copyingext(self):
@@ -298,17 +320,19 @@ class TestHdfsSensorRegex(unittest.TestCase):
         self.log.debug('Running %s', self._testMethodName)
         self.log.debug('#' * 10)
         compiled_regex = re.compile(r"copying_file_\d+.txt")
-        task = HdfsSensorRegex(task_id='Should_match_the_regex_but_filesize',
-                               filepath='/datadirectory/regex_dir',
-                               regex=compiled_regex,
-                               ignored_ext=['_COPYING_', 'sftp'],
-                               file_size=20,
-                               timeout=1,
-                               retry_delay=timedelta(seconds=1),
-                               poke_interval=1,
-                               hook=self.hook)
+        task = HdfsRegexSensor(
+            task_id='Should_match_the_regex_but_filesize',
+            filepath='/datadirectory/regex_dir',
+            regex=compiled_regex,
+            ignored_ext=['_COPYING_', 'sftp'],
+            file_size=20,
+            timeout=1,
+            retry_delay=timedelta(seconds=1),
+            poke_interval=1,
+            hook=self.hook,
+        )
 
         # When
         # Then
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             task.execute(None)

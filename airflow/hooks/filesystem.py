@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,7 +17,7 @@
 # under the License.
 #
 
-from airflow.hooks.base_hook import BaseHook
+from airflow.hooks.base import BaseHook
 
 
 class FSHook(BaseHook):
@@ -28,19 +27,25 @@ class FSHook(BaseHook):
     Connection should have a name and a path specified under extra:
 
     example:
-    Conn Id: fs_test
-    Conn Type: File (path)
+    Connection Id: fs_test
+    Connection Type: File (path)
     Host, Schema, Login, Password, Port: empty
     Extra: {"path": "/tmp"}
     """
 
-    def __init__(self, conn_id='fs_default'):
+    def __init__(self, conn_id: str = 'fs_default'):
+        super().__init__()
         conn = self.get_connection(conn_id)
         self.basepath = conn.extra_dejson.get('path', '')
         self.conn = conn
 
-    def get_conn(self):
+    def get_conn(self) -> None:
         pass
 
-    def get_path(self):
+    def get_path(self) -> str:
+        """
+        Get the path to the filesystem location.
+
+        :return: the path.
+        """
         return self.basepath

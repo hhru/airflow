@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,12 +17,13 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
-import mock
+import pytest
 
 from airflow.exceptions import AirflowException
 from airflow.providers.amazon.aws.hooks.sagemaker import SageMakerHook
-from airflow.providers.amazon.aws.operators.sagemaker_endpoint_config import SageMakerEndpointConfigOperator
+from airflow.providers.amazon.aws.operators.sagemaker import SageMakerEndpointConfigOperator
 
 model_name = 'test-model-name'
 config_name = 'test-config-name'
@@ -35,35 +35,31 @@ create_endpoint_config_params = {
             'VariantName': 'AllTraffic',
             'ModelName': model_name,
             'InitialInstanceCount': '1',
-            'InstanceType': 'ml.c4.xlarge'
+            'InstanceType': 'ml.c4.xlarge',
         }
-    ]
+    ],
 }
 
 
 class TestSageMakerEndpointConfigOperator(unittest.TestCase):
-
     def setUp(self):
         self.sagemaker = SageMakerEndpointConfigOperator(
             task_id='test_sagemaker_operator',
             aws_conn_id='sagemaker_test_id',
-            config=create_endpoint_config_params
+            config=create_endpoint_config_params,
         )
 
     def test_parse_config_integers(self):
         self.sagemaker.parse_config_integers()
         for variant in self.sagemaker.config['ProductionVariants']:
-            self.assertEqual(variant['InitialInstanceCount'],
-                             int(variant['InitialInstanceCount']))
+            assert variant['InitialInstanceCount'] == int(variant['InitialInstanceCount'])
 
     @mock.patch.object(SageMakerHook, 'get_conn')
     @mock.patch.object(SageMakerHook, 'create_endpoint_config')
     def test_execute(self, mock_model, mock_client):
         mock_model.return_value = {
             'EndpointConfigArn': 'testarn',
-            'ResponseMetadata': {
-                'HTTPStatusCode': 200
-            }
+            'ResponseMetadata': {'HTTPStatusCode': 200},
         }
         self.sagemaker.execute(None)
         mock_model.assert_called_once_with(create_endpoint_config_params)
@@ -73,12 +69,7 @@ class TestSageMakerEndpointConfigOperator(unittest.TestCase):
     def test_execute_with_failure(self, mock_model, mock_client):
         mock_model.return_value = {
             'EndpointConfigArn': 'testarn',
-            'ResponseMetadata': {
-                'HTTPStatusCode': 200
-            }
+            'ResponseMetadata': {'HTTPStatusCode': 200},
         }
-        self.assertRaises(AirflowException, self.sagemaker.execute, None)
-
-
-if __name__ == '__main__':
-    unittest.main()
+        with pytest.raises(AirflowException):
+            self.sagemaker.execute(None)

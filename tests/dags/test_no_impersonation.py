@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -39,7 +38,8 @@ test_command = dedent(
         echo 'current uid does not have root privileges!'
         exit 1
     fi
-    """)
+    """
+)
 
 task = BashOperator(
     task_id='test_superuser',

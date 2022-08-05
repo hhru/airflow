@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -20,7 +19,9 @@
 import unittest
 from unittest import mock
 
-from airflow import AirflowException
+import pytest
+
+from airflow.exceptions import AirflowException
 from airflow.providers.segment.hooks.segment import SegmentHook
 
 TEST_CONN_ID = 'test_segment'
@@ -28,7 +29,6 @@ WRITE_KEY = 'foo'
 
 
 class TestSegmentHook(unittest.TestCase):
-
     def setUp(self):
         super().setUp()
 
@@ -38,7 +38,6 @@ class TestSegmentHook(unittest.TestCase):
         self.conn.extra_dejson = {'write_key': self.expected_write_key}
 
         class UnitTestSegmentHook(SegmentHook):
-
             def get_conn(self):
                 return conn
 
@@ -49,14 +48,10 @@ class TestSegmentHook(unittest.TestCase):
 
     def test_get_conn(self):
         expected_connection = self.test_hook.get_conn()
-        self.assertEqual(expected_connection, self.conn)
-        self.assertIsNotNone(expected_connection.write_key)
-        self.assertEqual(expected_connection.write_key, self.expected_write_key)
+        assert expected_connection == self.conn
+        assert expected_connection.write_key is not None
+        assert expected_connection.write_key == self.expected_write_key
 
     def test_on_error(self):
-        with self.assertRaises(AirflowException):
+        with pytest.raises(AirflowException):
             self.test_hook.on_error('error', ['items'])
-
-
-if __name__ == '__main__':
-    unittest.main()

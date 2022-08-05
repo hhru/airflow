@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,43 +15,47 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Iterable, Mapping, Optional, Union
+from typing import Any, Iterable, List, Mapping, Optional, Sequence, Union
 
 from airflow.models import BaseOperator
 from airflow.providers.sqlite.hooks.sqlite import SqliteHook
-from airflow.utils.decorators import apply_defaults
 
 
 class SqliteOperator(BaseOperator):
     """
     Executes sql code in a specific Sqlite database
 
-    :param sql: the sql code to be executed. (templated)
-    :type sql: str or string pointing to a template file. File must have
-        a '.sql' extensions.
+    .. seealso::
+        For more information on how to use this operator, take a look at the guide:
+        :ref:`howto/operator:SqliteOperator`
+
+    :param sql: the sql code to be executed. Can receive a str representing a
+        sql statement, a list of str (sql statements), or reference to a template file.
+        Template reference are recognized by str ending in '.sql'
+        (templated)
     :param sqlite_conn_id: reference to a specific sqlite database
-    :type sqlite_conn_id: str
     :param parameters: (optional) the parameters to render the SQL query with.
-    :type parameters: mapping or iterable
     """
 
-    template_fields = ('sql',)
-    template_ext = ('.sql',)
+    template_fields: Sequence[str] = ('sql',)
+    template_ext: Sequence[str] = ('.sql',)
+    template_fields_renderers = {'sql': 'sql'}
     ui_color = '#cdaaed'
 
-    @apply_defaults
     def __init__(
-            self,
-            sql: str,
-            sqlite_conn_id: str = 'sqlite_default',
-            parameters: Optional[Union[Mapping, Iterable]] = None,
-            *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+        self,
+        *,
+        sql: Union[str, List[str]],
+        sqlite_conn_id: str = 'sqlite_default',
+        parameters: Optional[Union[Mapping, Iterable]] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
         self.sqlite_conn_id = sqlite_conn_id
         self.sql = sql
         self.parameters = parameters or []
 
-    def execute(self, context):
+    def execute(self, context: Mapping[Any, Any]) -> None:
         self.log.info('Executing: %s', self.sql)
         hook = SqliteHook(sqlite_conn_id=self.sqlite_conn_id)
         hook.run(self.sql, parameters=self.parameters)

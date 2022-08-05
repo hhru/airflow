@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,10 +15,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from airflow.models import BaseOperator
 from airflow.providers.segment.hooks.segment import SegmentHook
-from airflow.utils.decorators import apply_defaults
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class SegmentTrackEventOperator(BaseOperator):
@@ -27,30 +29,27 @@ class SegmentTrackEventOperator(BaseOperator):
     Send Track Event to Segment for a specified user_id and event
 
     :param user_id: The ID for this user in your database. (templated)
-    :type user_id: str
     :param event: The name of the event you're tracking. (templated)
-    :type event: str
     :param properties: A dictionary of properties for the event. (templated)
-    :type properties: dict
     :param segment_conn_id: The connection ID to use when connecting to Segment.
-    :type segment_conn_id: str
     :param segment_debug_mode: Determines whether Segment should run in debug mode.
         Defaults to False
-    :type segment_debug_mode: bool
     """
-    template_fields = ('user_id', 'event', 'properties')
+
+    template_fields: Sequence[str] = ('user_id', 'event', 'properties')
     ui_color = '#ffd700'
 
-    @apply_defaults
-    def __init__(self,
-                 user_id,
-                 event,
-                 properties=None,
-                 segment_conn_id='segment_default',
-                 segment_debug_mode=False,
-                 *args,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        *,
+        user_id: str,
+        event: str,
+        properties: Optional[dict] = None,
+        segment_conn_id: str = 'segment_default',
+        segment_debug_mode: bool = False,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
         self.user_id = user_id
         self.event = event
         properties = properties or {}
@@ -58,15 +57,14 @@ class SegmentTrackEventOperator(BaseOperator):
         self.segment_debug_mode = segment_debug_mode
         self.segment_conn_id = segment_conn_id
 
-    def execute(self, context):
-        hook = SegmentHook(segment_conn_id=self.segment_conn_id,
-                           segment_debug_mode=self.segment_debug_mode)
+    def execute(self, context: 'Context') -> None:
+        hook = SegmentHook(segment_conn_id=self.segment_conn_id, segment_debug_mode=self.segment_debug_mode)
 
         self.log.info(
             'Sending track event (%s) for user id: %s with properties: %s',
-            self.event, self.user_id, self.properties)
+            self.event,
+            self.user_id,
+            self.properties,
+        )
 
-        hook.track(
-            user_id=self.user_id,
-            event=self.event,
-            properties=self.properties)
+        hook.track(user_id=self.user_id, event=self.event, properties=self.properties)  # type: ignore

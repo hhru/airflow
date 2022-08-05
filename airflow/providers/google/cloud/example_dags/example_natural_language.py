@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -21,15 +20,18 @@
 Example Airflow DAG for Google Cloud Natural Language service
 """
 
+from datetime import datetime
+
 from google.cloud.language_v1.proto.language_service_pb2 import Document
 
 from airflow import models
 from airflow.operators.bash import BashOperator
 from airflow.providers.google.cloud.operators.natural_language import (
-    CloudNaturalLanguageAnalyzeEntitiesOperator, CloudNaturalLanguageAnalyzeEntitySentimentOperator,
-    CloudNaturalLanguageAnalyzeSentimentOperator, CloudNaturalLanguageClassifyTextOperator,
+    CloudNaturalLanguageAnalyzeEntitiesOperator,
+    CloudNaturalLanguageAnalyzeEntitySentimentOperator,
+    CloudNaturalLanguageAnalyzeSentimentOperator,
+    CloudNaturalLanguageClassifyTextOperator,
 )
-from airflow.utils.dates import days_ago
 
 # [START howto_operator_gcp_natural_language_document_text]
 TEXT = """Airflow is a platform to programmatically author, schedule and monitor workflows.
@@ -43,27 +45,27 @@ document = Document(content=TEXT, type="PLAIN_TEXT")
 # [END howto_operator_gcp_natural_language_document_text]
 
 # [START howto_operator_gcp_natural_language_document_gcs]
-GCS_CONTENT_URI = "gs://my-text-bucket/sentiment-me.txt"
+GCS_CONTENT_URI = "gs://INVALID BUCKET NAME/sentiment-me.txt"
 document_gcs = Document(gcs_content_uri=GCS_CONTENT_URI, type="PLAIN_TEXT")
 # [END howto_operator_gcp_natural_language_document_gcs]
 
 
-default_args = {"start_date": days_ago(1)}
-
 with models.DAG(
     "example_gcp_natural_language",
-    default_args=default_args,
-    schedule_interval=None,  # Override to match your needs
+    schedule_interval='@once',  # Override to match your needs
+    start_date=datetime(2021, 1, 1),
+    catchup=False,
 ) as dag:
 
     # [START howto_operator_gcp_natural_language_analyze_entities]
-    analyze_entities = \
-        CloudNaturalLanguageAnalyzeEntitiesOperator(document=document, task_id="analyze_entities")
+    analyze_entities = CloudNaturalLanguageAnalyzeEntitiesOperator(
+        document=document, task_id="analyze_entities"
+    )
     # [END howto_operator_gcp_natural_language_analyze_entities]
 
     # [START howto_operator_gcp_natural_language_analyze_entities_result]
     analyze_entities_result = BashOperator(
-        bash_command="echo \"{{ task_instance.xcom_pull('analyze_entities') }}\"",
+        bash_command=f"echo {analyze_entities.output}",
         task_id="analyze_entities_result",
     )
     # [END howto_operator_gcp_natural_language_analyze_entities_result]
@@ -76,19 +78,20 @@ with models.DAG(
 
     # [START howto_operator_gcp_natural_language_analyze_entity_sentiment_result]
     analyze_entity_sentiment_result = BashOperator(
-        bash_command="echo \"{{ task_instance.xcom_pull('analyze_entity_sentiment') }}\"",
+        bash_command=f"echo {analyze_entity_sentiment.output}",
         task_id="analyze_entity_sentiment_result",
     )
     # [END howto_operator_gcp_natural_language_analyze_entity_sentiment_result]
 
     # [START howto_operator_gcp_natural_language_analyze_sentiment]
-    analyze_sentiment = \
-        CloudNaturalLanguageAnalyzeSentimentOperator(document=document, task_id="analyze_sentiment")
+    analyze_sentiment = CloudNaturalLanguageAnalyzeSentimentOperator(
+        document=document, task_id="analyze_sentiment"
+    )
     # [END howto_operator_gcp_natural_language_analyze_sentiment]
 
     # [START howto_operator_gcp_natural_language_analyze_sentiment_result]
     analyze_sentiment_result = BashOperator(
-        bash_command="echo \"{{ task_instance.xcom_pull('analyze_sentiment') }}\"",
+        bash_command=f"echo {analyze_sentiment.output}",
         task_id="analyze_sentiment_result",
     )
     # [END howto_operator_gcp_natural_language_analyze_sentiment_result]
@@ -101,7 +104,7 @@ with models.DAG(
 
     # [START howto_operator_gcp_natural_language_analyze_classify_text_result]
     analyze_classify_text_result = BashOperator(
-        bash_command="echo \"{{ task_instance.xcom_pull('analyze_classify_text') }}\"",
+        bash_command=f"echo {analyze_classify_text.output}",
         task_id="analyze_classify_text_result",
     )
     # [END howto_operator_gcp_natural_language_analyze_classify_text_result]

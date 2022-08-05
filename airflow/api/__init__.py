@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,38 +16,30 @@
 # specific language governing permissions and limitations
 # under the License.
 """Authentication backend"""
-
+import logging
 from importlib import import_module
 
 from airflow.configuration import conf
 from airflow.exceptions import AirflowConfigException, AirflowException
-from airflow.utils.log.logging_mixin import LoggingMixin
 
-
-class ApiAuth:  # pylint: disable=too-few-public-methods
-    """Class to keep module of Authentication API  """
-    def __init__(self):
-        self.api_auth = None
-
-
-API_AUTH = ApiAuth()
-
-LOG = LoggingMixin().log
+log = logging.getLogger(__name__)
 
 
 def load_auth():
-    """Loads authentication backend"""
-    auth_backend = 'airflow.api.auth.backend.default'
+    """Loads authentication backends"""
+    auth_backends = 'airflow.api.auth.backend.default'
     try:
-        auth_backend = conf.get("api", "auth_backend")
+        auth_backends = conf.get("api", "auth_backends")
     except AirflowConfigException:
         pass
 
-    try:
-        API_AUTH.api_auth = import_module(auth_backend)
-    except ImportError as err:
-        LOG.critical(
-            "Cannot import %s for API authentication due to: %s",
-            auth_backend, err
-        )
-        raise AirflowException(err)
+    backends = []
+    for backend in auth_backends.split(","):
+        try:
+            auth = import_module(backend.strip())
+            log.info("Loaded API auth backend: %s", backend)
+            backends.append(auth)
+        except ImportError as err:
+            log.critical("Cannot import %s for API authentication due to: %s", backend, err)
+            raise AirflowException(err)
+    return backends

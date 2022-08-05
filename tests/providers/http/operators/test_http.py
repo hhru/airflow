@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,8 +17,9 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
-import mock
+import pytest
 import requests_mock
 
 from airflow.exceptions import AirflowException
@@ -28,7 +28,6 @@ from airflow.providers.http.operators.http import SimpleHttpOperator
 
 @mock.patch.dict('os.environ', AIRFLOW_CONN_HTTP_EXAMPLE='http://www.example.com')
 class TestSimpleHttpOp(unittest.TestCase):
-
     @requests_mock.mock()
     def test_response_in_logs(self, m):
         """
@@ -45,13 +44,8 @@ class TestSimpleHttpOp(unittest.TestCase):
             log_response=True,
         )
 
-        with mock.patch.object(operator.log, 'info') as mock_info:
-            operator.execute(None)
-            calls = [
-                mock.call('Example.com fake response'),
-                mock.call('Example.com fake response')
-            ]
-            mock_info.has_calls(calls)
+        result = operator.execute('Example.com fake response')
+        assert result == 'Example.com fake response'
 
     @requests_mock.mock()
     def test_response_in_logs_after_failed_check(self, m):
@@ -70,13 +64,24 @@ class TestSimpleHttpOp(unittest.TestCase):
             endpoint='/',
             http_conn_id='HTTP_EXAMPLE',
             log_response=True,
-            response_check=response_check
+            response_check=response_check,
         )
 
         with mock.patch.object(operator.log, 'info') as mock_info:
-            self.assertRaises(AirflowException, operator.execute, None)
-            calls = [
-                mock.call('Calling HTTP method'),
-                mock.call('invalid response')
-            ]
+            with pytest.raises(AirflowException):
+                operator.execute({})
+            calls = [mock.call('Calling HTTP method'), mock.call('invalid response')]
             mock_info.assert_has_calls(calls, any_order=True)
+
+    @requests_mock.mock()
+    def test_filters_response(self, m):
+        m.get('http://www.example.com', json={'value': 5})
+        operator = SimpleHttpOperator(
+            task_id='test_HTTP_op',
+            method='GET',
+            endpoint='/',
+            http_conn_id='HTTP_EXAMPLE',
+            response_filter=lambda response: response.json(),
+        )
+        result = operator.execute({})
+        assert result == {'value': 5}

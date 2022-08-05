@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,32 +17,52 @@
 # under the License.
 #
 
-from distutils.util import strtobool
+from typing import Optional
 
 import jenkins
 
-from airflow.hooks.base_hook import BaseHook
+from airflow import AirflowException
+from airflow.hooks.base import BaseHook
+from airflow.utils.strings import to_boolean
 
 
 class JenkinsHook(BaseHook):
-    """
-    Hook to manage connection to jenkins server
-    """
+    """Hook to manage connection to jenkins server"""
 
-    def __init__(self, conn_id='jenkins_default'):
+    conn_name_attr = 'conn_id'
+    default_conn_name = 'jenkins_default'
+    conn_type = 'jenkins'
+    hook_name = 'Jenkins'
+
+    def __init__(self, conn_id: str = default_conn_name) -> None:
+        super().__init__()
         connection = self.get_connection(conn_id)
         self.connection = connection
-        connectionPrefix = 'http'
+        connection_prefix = 'http'
         # connection.extra contains info about using https (true) or http (false)
-        if connection.extra is None or connection.extra == '':
-            connection.extra = 'false'
-            # set a default value to connection.extra
-            # to avoid rising ValueError in strtobool
-        if strtobool(connection.extra):
-            connectionPrefix = 'https'
-        url = '%s://%s:%d' % (connectionPrefix, connection.host, connection.port)
+        if to_boolean(connection.extra):
+            connection_prefix = 'https'
+        url = f'{connection_prefix}://{connection.host}:{connection.port}'
         self.log.info('Trying to connect to %s', url)
         self.jenkins_server = jenkins.Jenkins(url, connection.login, connection.password)
 
-    def get_jenkins_server(self):
+    def get_jenkins_server(self) -> jenkins.Jenkins:
+        """Get jenkins server"""
         return self.jenkins_server
+
+    def get_build_building_state(self, job_name: str, build_number: Optional[int]) -> bool:
+        """Get build building state"""
+        try:
+            if not build_number:
+                self.log.info("Build number not specified, getting latest build info from Jenkins")
+                job_info = self.jenkins_server.get_job_info(job_name)
+                build_number_to_check = job_info['lastBuild']['number']
+            else:
+                build_number_to_check = build_number
+
+            self.log.info("Getting build info for %s build number: #%s", job_name, build_number_to_check)
+            build_info = self.jenkins_server.get_build_info(job_name, build_number_to_check)
+            building = build_info['building']
+            return building
+        except jenkins.JenkinsException as err:
+            raise AirflowException(f'Jenkins call failed with error : {err}')

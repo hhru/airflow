@@ -17,11 +17,12 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
 import boto3
-import mock
+import pytest
 
-from airflow.providers.amazon.aws.hooks.glue_catalog import AwsGlueCatalogHook
+from airflow.providers.amazon.aws.hooks.glue_catalog import GlueCatalogHook
 
 try:
     from moto import mock_glue
@@ -33,145 +34,103 @@ TABLE_NAME = 'table'
 TABLE_INPUT = {
     "Name": TABLE_NAME,
     "StorageDescriptor": {
-        "Columns": [
-            {
-                "Name": "string",
-                "Type": "string",
-                "Comment": "string"
-            }
-        ],
-        "Location": "s3://mybucket/{}/{}".format(DB_NAME, TABLE_NAME),
-    }
+        "Columns": [{"Name": "string", "Type": "string", "Comment": "string"}],
+        "Location": f"s3://mybucket/{DB_NAME}/{TABLE_NAME}",
+    },
 }
 
 
-@unittest.skipIf(mock_glue is None,
-                 "Skipping test because moto.mock_glue is not available")
-class TestAwsGlueCatalogHook(unittest.TestCase):
-
+@unittest.skipIf(mock_glue is None, "Skipping test because moto.mock_glue is not available")
+class TestGlueCatalogHook(unittest.TestCase):
     @mock_glue
     def setUp(self):
         self.client = boto3.client('glue', region_name='us-east-1')
-        self.hook = AwsGlueCatalogHook(region_name="us-east-1")
+        self.hook = GlueCatalogHook(region_name="us-east-1")
 
     @mock_glue
     def test_get_conn_returns_a_boto3_connection(self):
-        hook = AwsGlueCatalogHook(region_name="us-east-1")
-        self.assertIsNotNone(hook.get_conn())
+        hook = GlueCatalogHook(region_name="us-east-1")
+        assert hook.get_conn() is not None
 
     @mock_glue
     def test_conn_id(self):
-        hook = AwsGlueCatalogHook(aws_conn_id='my_aws_conn_id', region_name="us-east-1")
-        self.assertEqual(hook.aws_conn_id, 'my_aws_conn_id')
+        hook = GlueCatalogHook(aws_conn_id='my_aws_conn_id', region_name="us-east-1")
+        assert hook.aws_conn_id == 'my_aws_conn_id'
 
     @mock_glue
     def test_region(self):
-        hook = AwsGlueCatalogHook(region_name="us-west-2")
-        self.assertEqual(hook.region_name, 'us-west-2')
+        hook = GlueCatalogHook(region_name="us-west-2")
+        assert hook.region_name == 'us-west-2'
 
     @mock_glue
-    @mock.patch.object(AwsGlueCatalogHook, 'get_conn')
+    @mock.patch.object(GlueCatalogHook, 'get_conn')
     def test_get_partitions_empty(self, mock_get_conn):
         response = set()
         mock_get_conn.get_paginator.paginate.return_value = response
-        hook = AwsGlueCatalogHook(region_name="us-east-1")
+        hook = GlueCatalogHook(region_name="us-east-1")
 
-        self.assertEqual(hook.get_partitions('db', 'tbl'), set())
+        assert hook.get_partitions('db', 'tbl') == set()
 
     @mock_glue
-    @mock.patch.object(AwsGlueCatalogHook, 'get_conn')
+    @mock.patch.object(GlueCatalogHook, 'get_conn')
     def test_get_partitions(self, mock_get_conn):
-        response = [{
-            'Partitions': [{
-                'Values': ['2015-01-01']
-            }]
-        }]
+        response = [{'Partitions': [{'Values': ['2015-01-01']}]}]
         mock_paginator = mock.Mock()
         mock_paginator.paginate.return_value = response
         mock_conn = mock.Mock()
         mock_conn.get_paginator.return_value = mock_paginator
         mock_get_conn.return_value = mock_conn
-        hook = AwsGlueCatalogHook(region_name="us-east-1")
-        result = hook.get_partitions('db',
-                                     'tbl',
-                                     expression='foo=bar',
-                                     page_size=2,
-                                     max_items=3)
+        hook = GlueCatalogHook(region_name="us-east-1")
+        result = hook.get_partitions('db', 'tbl', expression='foo=bar', page_size=2, max_items=3)
 
-        self.assertEqual(result, {('2015-01-01',)})
+        assert result == {('2015-01-01',)}
         mock_conn.get_paginator.assert_called_once_with('get_partitions')
-        mock_paginator.paginate.assert_called_once_with(DatabaseName='db',
-                                                        TableName='tbl',
-                                                        Expression='foo=bar',
-                                                        PaginationConfig={
-                                                            'PageSize': 2,
-                                                            'MaxItems': 3})
+        mock_paginator.paginate.assert_called_once_with(
+            DatabaseName='db',
+            TableName='tbl',
+            Expression='foo=bar',
+            PaginationConfig={'PageSize': 2, 'MaxItems': 3},
+        )
 
     @mock_glue
-    @mock.patch.object(AwsGlueCatalogHook, 'get_partitions')
+    @mock.patch.object(GlueCatalogHook, 'get_partitions')
     def test_check_for_partition(self, mock_get_partitions):
         mock_get_partitions.return_value = {('2018-01-01',)}
-        hook = AwsGlueCatalogHook(region_name="us-east-1")
+        hook = GlueCatalogHook(region_name="us-east-1")
 
-        self.assertTrue(hook.check_for_partition('db', 'tbl', 'expr'))
+        assert hook.check_for_partition('db', 'tbl', 'expr')
         mock_get_partitions.assert_called_once_with('db', 'tbl', 'expr', max_items=1)
 
     @mock_glue
-    @mock.patch.object(AwsGlueCatalogHook, 'get_partitions')
+    @mock.patch.object(GlueCatalogHook, 'get_partitions')
     def test_check_for_partition_false(self, mock_get_partitions):
         mock_get_partitions.return_value = set()
-        hook = AwsGlueCatalogHook(region_name="us-east-1")
+        hook = GlueCatalogHook(region_name="us-east-1")
 
-        self.assertFalse(hook.check_for_partition('db', 'tbl', 'expr'))
+        assert not hook.check_for_partition('db', 'tbl', 'expr')
 
     @mock_glue
     def test_get_table_exists(self):
-        self.client.create_database(
-            DatabaseInput={
-                'Name': DB_NAME
-            }
-        )
-        self.client.create_table(
-            DatabaseName=DB_NAME,
-            TableInput=TABLE_INPUT
-        )
+        self.client.create_database(DatabaseInput={'Name': DB_NAME})
+        self.client.create_table(DatabaseName=DB_NAME, TableInput=TABLE_INPUT)
 
         result = self.hook.get_table(DB_NAME, TABLE_NAME)
 
-        self.assertEqual(result['Name'], TABLE_INPUT['Name'])
-        self.assertEqual(result['StorageDescriptor']['Location'],
-                         TABLE_INPUT['StorageDescriptor']['Location'])
+        assert result['Name'] == TABLE_INPUT['Name']
+        assert result['StorageDescriptor']['Location'] == TABLE_INPUT['StorageDescriptor']['Location']
 
     @mock_glue
     def test_get_table_not_exists(self):
-        self.client.create_database(
-            DatabaseInput={
-                'Name': DB_NAME
-            }
-        )
-        self.client.create_table(
-            DatabaseName=DB_NAME,
-            TableInput=TABLE_INPUT
-        )
+        self.client.create_database(DatabaseInput={'Name': DB_NAME})
+        self.client.create_table(DatabaseName=DB_NAME, TableInput=TABLE_INPUT)
 
-        with self.assertRaises(Exception):
+        with pytest.raises(Exception):
             self.hook.get_table(DB_NAME, 'dummy_table')
 
     @mock_glue
     def test_get_table_location(self):
-        self.client.create_database(
-            DatabaseInput={
-                'Name': DB_NAME
-            }
-        )
-        self.client.create_table(
-            DatabaseName=DB_NAME,
-            TableInput=TABLE_INPUT
-        )
+        self.client.create_database(DatabaseInput={'Name': DB_NAME})
+        self.client.create_table(DatabaseName=DB_NAME, TableInput=TABLE_INPUT)
 
         result = self.hook.get_table_location(DB_NAME, TABLE_NAME)
-        self.assertEqual(result, TABLE_INPUT['StorageDescriptor']['Location'])
-
-
-if __name__ == '__main__':
-    unittest.main()
+        assert result == TABLE_INPUT['StorageDescriptor']['Location']

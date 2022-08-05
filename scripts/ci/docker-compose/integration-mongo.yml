@@ -15,15 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 ---
-version: "2.2"
+version: "3.7"
 services:
   mongo:
-    init: true
     image: mongo:3
     volumes:
       - /dev/urandom:/dev/random   # Required to get non-blocking entropy source
-  airflow-testing:
+      - mongo-db-volume:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: always
+
+  airflow:
     environment:
       - INTEGRATION_MONGO=true
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-db-volume:

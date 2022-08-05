@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,10 +16,14 @@
 # specific language governing permissions and limitations
 # under the License.
 #
+from typing import TYPE_CHECKING, Optional, Sequence
+
 from airflow.exceptions import AirflowException
 from airflow.providers.discord.hooks.discord_webhook import DiscordWebhookHook
 from airflow.providers.http.operators.http import SimpleHttpOperator
-from airflow.utils.decorators import apply_defaults
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class DiscordWebhookOperator(SimpleHttpOperator):
@@ -36,39 +39,31 @@ class DiscordWebhookOperator(SimpleHttpOperator):
     :param http_conn_id: Http connection ID with host as "https://discord.com/api/" and
                          default webhook endpoint in the extra field in the form of
                          {"webhook_endpoint": "webhooks/{webhook.id}/{webhook.token}"}
-    :type http_conn_id: str
     :param webhook_endpoint: Discord webhook endpoint in the form of
-                             "webhooks/{webhook.id}/{webhook.token}"
-    :type webhook_endpoint: str
+                             "webhooks/{webhook.id}/{webhook.token}" (templated)
     :param message: The message you want to send to your Discord channel
                     (max 2000 characters). (templated)
-    :type message: str
     :param username: Override the default username of the webhook. (templated)
-    :type username: str
     :param avatar_url: Override the default avatar of the webhook
-    :type avatar_url: str
     :param tts: Is a text-to-speech message
-    :type tts: bool
     :param proxy: Proxy to use to make the Discord webhook call
-    :type proxy: str
     """
 
-    template_fields = ['username', 'message']
+    template_fields: Sequence[str] = ('username', 'message', 'webhook_endpoint')
 
-    @apply_defaults
-    def __init__(self,
-                 http_conn_id=None,
-                 webhook_endpoint=None,
-                 message="",
-                 username=None,
-                 avatar_url=None,
-                 tts=False,
-                 proxy=None,
-                 *args,
-                 **kwargs):
-        super().__init__(endpoint=webhook_endpoint,
-                         *args,
-                         **kwargs)
+    def __init__(
+        self,
+        *,
+        http_conn_id: Optional[str] = None,
+        webhook_endpoint: Optional[str] = None,
+        message: str = "",
+        username: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        tts: bool = False,
+        proxy: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(endpoint=webhook_endpoint, **kwargs)
 
         if not http_conn_id:
             raise AirflowException('No valid Discord http_conn_id supplied.')
@@ -80,12 +75,10 @@ class DiscordWebhookOperator(SimpleHttpOperator):
         self.avatar_url = avatar_url
         self.tts = tts
         self.proxy = proxy
-        self.hook = None
+        self.hook: Optional[DiscordWebhookHook] = None
 
-    def execute(self, context):
-        """
-        Call the DiscordWebhookHook to post message
-        """
+    def execute(self, context: 'Context') -> None:
+        """Call the DiscordWebhookHook to post message"""
         self.hook = DiscordWebhookHook(
             self.http_conn_id,
             self.webhook_endpoint,
@@ -93,6 +86,6 @@ class DiscordWebhookOperator(SimpleHttpOperator):
             self.username,
             self.avatar_url,
             self.tts,
-            self.proxy
+            self.proxy,
         )
         self.hook.execute()

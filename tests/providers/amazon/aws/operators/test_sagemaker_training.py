@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -18,112 +16,138 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
-import mock
+import pytest
 
 from airflow.exceptions import AirflowException
 from airflow.providers.amazon.aws.hooks.sagemaker import SageMakerHook
-from airflow.providers.amazon.aws.operators.sagemaker_training import SageMakerTrainingOperator
+from airflow.providers.amazon.aws.operators.sagemaker import SageMakerTrainingOperator
 
 role = 'arn:aws:iam:role/test-role'
 
 bucket = 'test-bucket'
 
 key = 'test/data'
-data_url = 's3://{}/{}'.format(bucket, key)
+data_url = f's3://{bucket}/{key}'
 
 job_name = 'test-job-name'
 
 image = 'test-image'
 
-output_url = 's3://{}/test/output'.format(bucket)
-create_training_params = \
-    {
-        'AlgorithmSpecification': {
-            'TrainingImage': image,
-            'TrainingInputMode': 'File'
-        },
-        'RoleArn': role,
-        'OutputDataConfig': {
-            'S3OutputPath': output_url
-        },
-        'ResourceConfig': {
-            'InstanceCount': '2',
-            'InstanceType': 'ml.c4.8xlarge',
-            'VolumeSizeInGB': '50'
-        },
-        'TrainingJobName': job_name,
-        'HyperParameters': {
-            'k': '10',
-            'feature_dim': '784',
-            'mini_batch_size': '500',
-            'force_dense': 'True'
-        },
-        'StoppingCondition': {
-            'MaxRuntimeInSeconds': '3600'
-        },
-        'InputDataConfig': [
-            {
-                'ChannelName': 'train',
-                'DataSource': {
-                    'S3DataSource': {
-                        'S3DataType': 'S3Prefix',
-                        'S3Uri': data_url,
-                        'S3DataDistributionType': 'FullyReplicated'
-                    }
-                },
-                'CompressionType': 'None',
-                'RecordWrapperType': 'None'
-            }
-        ]
-    }
+output_url = f's3://{bucket}/test/output'
+create_training_params = {
+    'AlgorithmSpecification': {'TrainingImage': image, 'TrainingInputMode': 'File'},
+    'RoleArn': role,
+    'OutputDataConfig': {'S3OutputPath': output_url},
+    'ResourceConfig': {'InstanceCount': '2', 'InstanceType': 'ml.c4.8xlarge', 'VolumeSizeInGB': '50'},
+    'TrainingJobName': job_name,
+    'HyperParameters': {'k': '10', 'feature_dim': '784', 'mini_batch_size': '500', 'force_dense': 'True'},
+    'StoppingCondition': {'MaxRuntimeInSeconds': '3600'},
+    'InputDataConfig': [
+        {
+            'ChannelName': 'train',
+            'DataSource': {
+                'S3DataSource': {
+                    'S3DataType': 'S3Prefix',
+                    'S3Uri': data_url,
+                    'S3DataDistributionType': 'FullyReplicated',
+                }
+            },
+            'CompressionType': 'None',
+            'RecordWrapperType': 'None',
+        }
+    ],
+}
 
 
-# noinspection PyUnusedLocal
-# pylint: disable=unused-argument
 class TestSageMakerTrainingOperator(unittest.TestCase):
-
     def setUp(self):
         self.sagemaker = SageMakerTrainingOperator(
             task_id='test_sagemaker_operator',
             aws_conn_id='sagemaker_test_id',
             config=create_training_params,
             wait_for_completion=False,
-            check_interval=5
+            check_interval=5,
         )
 
     def test_parse_config_integers(self):
         self.sagemaker.parse_config_integers()
-        self.assertEqual(self.sagemaker.config['ResourceConfig']['InstanceCount'],
-                         int(self.sagemaker.config['ResourceConfig']['InstanceCount']))
-        self.assertEqual(self.sagemaker.config['ResourceConfig']['VolumeSizeInGB'],
-                         int(self.sagemaker.config['ResourceConfig']['VolumeSizeInGB']))
-        self.assertEqual(self.sagemaker.config['StoppingCondition']['MaxRuntimeInSeconds'],
-                         int(self.sagemaker.config['StoppingCondition']['MaxRuntimeInSeconds']))
+        assert self.sagemaker.config['ResourceConfig']['InstanceCount'] == int(
+            self.sagemaker.config['ResourceConfig']['InstanceCount']
+        )
+        assert self.sagemaker.config['ResourceConfig']['VolumeSizeInGB'] == int(
+            self.sagemaker.config['ResourceConfig']['VolumeSizeInGB']
+        )
+        assert self.sagemaker.config['StoppingCondition']['MaxRuntimeInSeconds'] == int(
+            self.sagemaker.config['StoppingCondition']['MaxRuntimeInSeconds']
+        )
 
     @mock.patch.object(SageMakerHook, 'get_conn')
     @mock.patch.object(SageMakerHook, 'create_training_job')
-    def test_execute(self, mock_training, mock_client):
-        mock_training.return_value = {'TrainingJobArn': 'testarn',
-                                      'ResponseMetadata':
-                                          {'HTTPStatusCode': 200}}
+    def test_execute_with_check_if_job_exists(self, mock_training, mock_client):
+        mock_training.return_value = {
+            'TrainingJobArn': 'testarn',
+            'ResponseMetadata': {'HTTPStatusCode': 200},
+        }
+        self.sagemaker._check_if_job_exists = mock.MagicMock()
         self.sagemaker.execute(None)
-        mock_training.assert_called_once_with(create_training_params,
-                                              wait_for_completion=False,
-                                              print_log=True,
-                                              check_interval=5,
-                                              max_ingestion_time=None
-                                              )
+        self.sagemaker._check_if_job_exists.assert_called_once()
+        mock_training.assert_called_once_with(
+            create_training_params,
+            wait_for_completion=False,
+            print_log=True,
+            check_interval=5,
+            max_ingestion_time=None,
+        )
+
+    @mock.patch.object(SageMakerHook, 'get_conn')
+    @mock.patch.object(SageMakerHook, 'create_training_job')
+    def test_execute_without_check_if_job_exists(self, mock_training, mock_client):
+        mock_training.return_value = {
+            'TrainingJobArn': 'testarn',
+            'ResponseMetadata': {'HTTPStatusCode': 200},
+        }
+        self.sagemaker.check_if_job_exists = False
+        self.sagemaker._check_if_job_exists = mock.MagicMock()
+        self.sagemaker.execute(None)
+        self.sagemaker._check_if_job_exists.assert_not_called()
+        mock_training.assert_called_once_with(
+            create_training_params,
+            wait_for_completion=False,
+            print_log=True,
+            check_interval=5,
+            max_ingestion_time=None,
+        )
 
     @mock.patch.object(SageMakerHook, 'get_conn')
     @mock.patch.object(SageMakerHook, 'create_training_job')
     def test_execute_with_failure(self, mock_training, mock_client):
-        mock_training.return_value = {'TrainingJobArn': 'testarn',
-                                      'ResponseMetadata':
-                                          {'HTTPStatusCode': 404}}
-        self.assertRaises(AirflowException, self.sagemaker.execute, None)
-# pylint: enable=unused-argument
+        mock_training.return_value = {
+            'TrainingJobArn': 'testarn',
+            'ResponseMetadata': {'HTTPStatusCode': 404},
+        }
+        with pytest.raises(AirflowException):
+            self.sagemaker.execute(None)
 
+    @mock.patch.object(SageMakerHook, "get_conn")
+    @mock.patch.object(SageMakerHook, "list_training_jobs")
+    def test_check_if_job_exists_increment(self, mock_list_training_jobs, mock_client):
+        self.sagemaker.check_if_job_exists = True
+        self.sagemaker.action_if_job_exists = "increment"
+        mock_list_training_jobs.return_value = [{"TrainingJobName": job_name}]
+        self.sagemaker._check_if_job_exists()
 
-if __name__ == '__main__':
-    unittest.main()
+        expected_config = create_training_params.copy()
+        # Expect to see TrainingJobName suffixed with "-2" because we return one existing job
+        expected_config["TrainingJobName"] = f"{job_name}-2"
+        assert self.sagemaker.config == expected_config
+
+    @mock.patch.object(SageMakerHook, "get_conn")
+    @mock.patch.object(SageMakerHook, "list_training_jobs")
+    def test_check_if_job_exists_fail(self, mock_list_training_jobs, mock_client):
+        self.sagemaker.check_if_job_exists = True
+        self.sagemaker.action_if_job_exists = "fail"
+        mock_list_training_jobs.return_value = [{"TrainingJobName": job_name}]
+        with pytest.raises(AirflowException):
+            self.sagemaker._check_if_job_exists()

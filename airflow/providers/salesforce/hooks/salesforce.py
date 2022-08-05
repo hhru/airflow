@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -24,63 +23,153 @@ retrieve data from it, and write that data to a file for other uses.
 .. note:: this hook also relies on the simple_salesforce package:
       https://github.com/simple-salesforce/simple-salesforce
 """
+import logging
+import sys
 import time
+from typing import Any, Dict, Iterable, List, Optional
+
+if sys.version_info >= (3, 8):
+    from functools import cached_property
+else:
+    from cached_property import cached_property
 
 import pandas as pd
-from simple_salesforce import Salesforce
+from requests import Session
+from simple_salesforce import Salesforce, api
 
-from airflow.hooks.base_hook import BaseHook
-from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow.hooks.base import BaseHook
+
+log = logging.getLogger(__name__)
 
 
 class SalesforceHook(BaseHook):
     """
-    Create new connection to Salesforce and allows you to pull data out of SFDC and save it to a file.
+    Creates new connection to Salesforce and allows you to pull data out of SFDC and save it to a file.
 
     You can then use that file with other Airflow operators to move the data into another data source.
 
-    :param conn_id: the name of the connection that has the parameters we need to connect to Salesforce.
-        The connection should be type `http` and include a user's security token in the `Extras` field.
-    :type conn_id: str
+    :param conn_id: The name of the connection that has the parameters needed to connect to Salesforce.
+        The connection should be of type `Salesforce`.
+    :param session_id: The access token for a given HTTP request session.
+    :param session: A custom HTTP request session. This enables the use of requests Session features not
+        otherwise exposed by `simple_salesforce`.
 
     .. note::
-        For the HTTP connection type, you can include a
-        JSON structure in the `Extras` field.
-        We need a user's security token to connect to Salesforce.
-        So we define it in the `Extras` field as `{"security_token":"YOUR_SECURITY_TOKEN"}`
+        A connection to Salesforce can be created via several authentication options:
 
+        * Password: Provide Username, Password, and Security Token
+        * Direct Session: Provide a `session_id` and either Instance or Instance URL
+        * OAuth 2.0 JWT: Provide a Consumer Key and either a Private Key or Private Key File Path
+        * IP Filtering: Provide Username, Password, and an Organization ID
+
+        If in sandbox, enter a Domain value of 'test'.
     """
 
-    def __init__(self, conn_id):
-        self.conn_id = conn_id
-        self.conn = None
+    conn_name_attr = "salesforce_conn_id"
+    default_conn_name = "salesforce_default"
+    conn_type = "salesforce"
+    hook_name = "Salesforce"
 
-    def get_conn(self):
-        """
-        Sign into Salesforce, only if we are not already signed in.
-        """
-        if not self.conn:
-            connection = self.get_connection(self.conn_id)
-            extras = connection.extra_dejson
-            self.conn = Salesforce(
-                username=connection.login,
-                password=connection.password,
-                security_token=extras['security_token'],
-                instance_url=connection.host,
-                sandbox=extras.get('sandbox', False)
-            )
+    def __init__(
+        self,
+        salesforce_conn_id: str = default_conn_name,
+        session_id: Optional[str] = None,
+        session: Optional[Session] = None,
+    ) -> None:
+        super().__init__()
+        self.conn_id = salesforce_conn_id
+        self.session_id = session_id
+        self.session = session
+
+    @staticmethod
+    def get_connection_form_widgets() -> Dict[str, Any]:
+        """Returns connection widgets to add to connection form"""
+        from flask_appbuilder.fieldwidgets import BS3PasswordFieldWidget, BS3TextFieldWidget
+        from flask_babel import lazy_gettext
+        from wtforms import PasswordField, StringField
+
+        return {
+            "extra__salesforce__security_token": PasswordField(
+                lazy_gettext("Security Token"), widget=BS3PasswordFieldWidget()
+            ),
+            "extra__salesforce__domain": StringField(lazy_gettext("Domain"), widget=BS3TextFieldWidget()),
+            "extra__salesforce__consumer_key": StringField(
+                lazy_gettext("Consumer Key"), widget=BS3TextFieldWidget()
+            ),
+            "extra__salesforce__private_key_file_path": PasswordField(
+                lazy_gettext("Private Key File Path"), widget=BS3PasswordFieldWidget()
+            ),
+            "extra__salesforce__private_key": PasswordField(
+                lazy_gettext("Private Key"), widget=BS3PasswordFieldWidget()
+            ),
+            "extra__salesforce__organization_id": StringField(
+                lazy_gettext("Organization ID"), widget=BS3TextFieldWidget()
+            ),
+            "extra__salesforce__instance": StringField(lazy_gettext("Instance"), widget=BS3TextFieldWidget()),
+            "extra__salesforce__instance_url": StringField(
+                lazy_gettext("Instance URL"), widget=BS3TextFieldWidget()
+            ),
+            "extra__salesforce__proxies": StringField(lazy_gettext("Proxies"), widget=BS3TextFieldWidget()),
+            "extra__salesforce__version": StringField(
+                lazy_gettext("API Version"), widget=BS3TextFieldWidget()
+            ),
+            "extra__salesforce__client_id": StringField(
+                lazy_gettext("Client ID"), widget=BS3TextFieldWidget()
+            ),
+        }
+
+    @staticmethod
+    def get_ui_field_behaviour() -> Dict[str, Any]:
+        """Returns custom field behaviour"""
+        return {
+            "hidden_fields": ["schema", "port", "extra", "host"],
+            "relabeling": {
+                "login": "Username",
+            },
+        }
+
+    @cached_property
+    def conn(self) -> api.Salesforce:
+        """Returns a Salesforce instance. (cached)"""
+        connection = self.get_connection(self.conn_id)
+        extras = connection.extra_dejson
+        # all extras below (besides the version one) are explicitly defaulted to None
+        # because simple-salesforce has a built-in authentication-choosing method that
+        # relies on which arguments are None and without "or None" setting this connection
+        # in the UI will result in the blank extras being empty strings instead of None,
+        # which would break the connection if "get" was used on its own.
+        conn = Salesforce(
+            username=connection.login,
+            password=connection.password,
+            security_token=extras.get('extra__salesforce__security_token') or None,
+            domain=extras.get('extra__salesforce__domain') or None,
+            session_id=self.session_id,
+            instance=extras.get('extra__salesforce__instance') or None,
+            instance_url=extras.get('extra__salesforce__instance_url') or None,
+            organizationId=extras.get('extra__salesforce__organization_id') or None,
+            version=extras.get('extra__salesforce__version') or api.DEFAULT_API_VERSION,
+            proxies=extras.get('extra__salesforce__proxies') or None,
+            session=self.session,
+            client_id=extras.get('extra__salesforce__client_id') or None,
+            consumer_key=extras.get('extra__salesforce__consumer_key') or None,
+            privatekey_file=extras.get('extra__salesforce__private_key_file_path') or None,
+            privatekey=extras.get('extra__salesforce__private_key') or None,
+        )
+        return conn
+
+    def get_conn(self) -> api.Salesforce:
+        """Returns a Salesforce instance. (cached)"""
         return self.conn
 
-    def make_query(self, query, include_deleted=False, query_params=None):
+    def make_query(
+        self, query: str, include_deleted: bool = False, query_params: Optional[dict] = None
+    ) -> dict:
         """
         Make a query to Salesforce.
 
         :param query: The query to make to Salesforce.
-        :type query: str
         :param include_deleted: True if the query should include deleted records.
-        :type include_deleted: bool
         :param query_params: Additional optional arguments
-        :type query_params: dict
         :return: The query result.
         :rtype: dict
         """
@@ -90,19 +179,19 @@ class SalesforceHook(BaseHook):
         query_params = query_params or {}
         query_results = conn.query_all(query, include_deleted=include_deleted, **query_params)
 
-        self.log.info("Received results: Total size: %s; Done: %s",
-                      query_results['totalSize'], query_results['done'])
+        self.log.info(
+            "Received results: Total size: %s; Done: %s", query_results['totalSize'], query_results['done']
+        )
 
         return query_results
 
-    def describe_object(self, obj):
+    def describe_object(self, obj: str) -> dict:
         """
         Get the description of an object from Salesforce.
         This description is the object's schema and
         some extra metadata that Salesforce stores for each object.
 
         :param obj: The name of the Salesforce object that we are getting a description of.
-        :type obj: str
         :return: the description of the Salesforce object.
         :rtype: dict
         """
@@ -110,22 +199,19 @@ class SalesforceHook(BaseHook):
 
         return conn.__getattr__(obj).describe()
 
-    def get_available_fields(self, obj):
+    def get_available_fields(self, obj: str) -> List[str]:
         """
         Get a list of all available fields for an object.
 
         :param obj: The name of the Salesforce object that we are getting a description of.
-        :type obj: str
         :return: the names of the fields.
-        :rtype: list of str
+        :rtype: list(str)
         """
-        self.get_conn()
-
         obj_description = self.describe_object(obj)
 
         return [field['name'] for field in obj_description['fields']]
 
-    def get_object_from_salesforce(self, obj, fields):
+    def get_object_from_salesforce(self, obj: str, fields: Iterable[str]) -> dict:
         """
         Get all instances of the `object` from Salesforce.
         For each model, only get the fields specified in fields.
@@ -134,28 +220,27 @@ class SalesforceHook(BaseHook):
             SELECT <fields> FROM <obj>;
 
         :param obj: The object name to get from Salesforce.
-        :type obj: str
         :param fields: The fields to get from the object.
-        :type fields: iterable
         :return: all instances of the object from Salesforce.
         :rtype: dict
         """
-        query = "SELECT {} FROM {}".format(",".join(fields), obj)
+        query = f"SELECT {','.join(fields)} FROM {obj}"
 
-        self.log.info("Making query to Salesforce: %s",
-                      query if len(query) < 30 else " ... ".join([query[:15], query[-15:]]))
+        self.log.info(
+            "Making query to Salesforce: %s",
+            query if len(query) < 30 else " ... ".join([query[:15], query[-15:]]),
+        )
 
         return self.make_query(query)
 
     @classmethod
-    def _to_timestamp(cls, column):
+    def _to_timestamp(cls, column: pd.Series) -> pd.Series:
         """
         Convert a column of a dataframe to UNIX timestamps if applicable
 
         :param column: A Series object representing a column of a dataframe.
-        :type column: pd.Series
         :return: a new series that maintains the same index as the original
-        :rtype: pd.Series
+        :rtype: pandas.Series
         """
         # try and convert the column to datetimes
         # the column MUST have a four digit year somewhere in the string
@@ -169,8 +254,7 @@ class SalesforceHook(BaseHook):
         try:
             column = pd.to_datetime(column)
         except ValueError:
-            log = LoggingMixin().log
-            log.warning("Could not convert field to timestamps: %s", column.name)
+            log.error("Could not convert field to timestamps: %s", column.name)
             return column
 
         # now convert the newly created datetimes into timestamps
@@ -186,12 +270,14 @@ class SalesforceHook(BaseHook):
 
         return pd.Series(converted, index=column.index)
 
-    def write_object_to_file(self,
-                             query_results,
-                             filename,
-                             fmt="csv",
-                             coerce_to_timestamp=False,
-                             record_time_added=False):
+    def write_object_to_file(
+        self,
+        query_results: List[dict],
+        filename: str,
+        fmt: str = "csv",
+        coerce_to_timestamp: bool = False,
+        record_time_added: bool = False,
+    ) -> pd.DataFrame:
         """
         Write query results to file.
 
@@ -214,25 +300,74 @@ class SalesforceHook(BaseHook):
         and makes it easier to work with in other database environments
 
         :param query_results: the results from a SQL query
-        :type query_results: list of dict
         :param filename: the name of the file where the data should be dumped to
-        :type filename: str
         :param fmt: the format you want the output in. Default:  'csv'
-        :type fmt: str
         :param coerce_to_timestamp: True if you want all datetime fields to be converted into Unix timestamps.
             False if you want them to be left in the same format as they were in Salesforce.
             Leaving the value as False will result in datetimes being strings. Default: False
-        :type coerce_to_timestamp: bool
         :param record_time_added: True if you want to add a Unix timestamp field
             to the resulting data that marks when the data was fetched from Salesforce. Default: False
-        :type record_time_added: bool
         :return: the dataframe that gets written to the file.
-        :rtype: pd.Dataframe
+        :rtype: pandas.Dataframe
         """
         fmt = fmt.lower()
         if fmt not in ['csv', 'json', 'ndjson']:
-            raise ValueError("Format value is not recognized: {}".format(fmt))
+            raise ValueError(f"Format value is not recognized: {fmt}")
 
+        df = self.object_to_df(
+            query_results=query_results,
+            coerce_to_timestamp=coerce_to_timestamp,
+            record_time_added=record_time_added,
+        )
+
+        # write the CSV or JSON file depending on the option
+        # NOTE:
+        #   datetimes here are an issue.
+        #   There is no good way to manage the difference
+        #   for to_json, the options are an epoch or a ISO string
+        #   but for to_csv, it will be a string output by datetime
+        #   For JSON we decided to output the epoch timestamp in seconds
+        #   (as is fairly standard for JavaScript)
+        #   And for csv, we do a string
+        if fmt == "csv":
+            # there are also a ton of newline objects that mess up our ability to write to csv
+            # we remove these newlines so that the output is a valid CSV format
+            self.log.info("Cleaning data and writing to CSV")
+            possible_strings = df.columns[df.dtypes == "object"]
+            df[possible_strings] = (
+                df[possible_strings]
+                .astype(str)
+                .apply(lambda x: x.str.replace("\r\n", "").str.replace("\n", ""))
+            )
+            # write the dataframe
+            df.to_csv(filename, index=False)
+        elif fmt == "json":
+            df.to_json(filename, "records", date_unit="s")
+        elif fmt == "ndjson":
+            df.to_json(filename, "records", lines=True, date_unit="s")
+
+        return df
+
+    def object_to_df(
+        self, query_results: List[dict], coerce_to_timestamp: bool = False, record_time_added: bool = False
+    ) -> pd.DataFrame:
+        """
+        Export query results to dataframe.
+
+        By default, this function will try and leave all values as they are represented in Salesforce.
+        You use the `coerce_to_timestamp` flag to force all datetimes to become Unix timestamps (UTC).
+        This is can be greatly beneficial as it will make all of your datetime fields look the same,
+        and makes it easier to work with in other database environments
+
+        :param query_results: the results from a SQL query
+        :param coerce_to_timestamp: True if you want all datetime fields to be converted into Unix timestamps.
+            False if you want them to be left in the same format as they were in Salesforce.
+            Leaving the value as False will result in datetimes being strings. Default: False
+        :param record_time_added: True if you want to add a Unix timestamp field
+            to the resulting data that marks when the data was fetched from Salesforce. Default: False
+        :return: the dataframe.
+        :rtype: pandas.Dataframe
+        """
         # this line right here will convert all integers to floats
         # if there are any None/np.nan values in the column
         # that's because None/np.nan cannot exist in an integer column
@@ -268,29 +403,5 @@ class SalesforceHook(BaseHook):
         if record_time_added:
             fetched_time = time.time()
             df["time_fetched_from_salesforce"] = fetched_time
-
-        # write the CSV or JSON file depending on the option
-        # NOTE:
-        #   datetimes here are an issue.
-        #   There is no good way to manage the difference
-        #   for to_json, the options are an epoch or a ISO string
-        #   but for to_csv, it will be a string output by datetime
-        #   For JSON we decided to output the epoch timestamp in seconds
-        #   (as is fairly standard for JavaScript)
-        #   And for csv, we do a string
-        if fmt == "csv":
-            # there are also a ton of newline objects that mess up our ability to write to csv
-            # we remove these newlines so that the output is a valid CSV format
-            self.log.info("Cleaning data and writing to CSV")
-            possible_strings = df.columns[df.dtypes == "object"]
-            df[possible_strings] = df[possible_strings].apply(
-                lambda x: x.str.replace("\r\n", "").str.replace("\n", "")
-            )
-            # write the dataframe
-            df.to_csv(filename, index=False)
-        elif fmt == "json":
-            df.to_json(filename, "records", date_unit="s")
-        elif fmt == "ndjson":
-            df.to_json(filename, "records", lines=True, date_unit="s")
 
         return df

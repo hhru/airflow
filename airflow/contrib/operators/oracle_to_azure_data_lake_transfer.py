@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,18 +17,18 @@
 # under the License.
 """
 This module is deprecated.
-Please use `airflow.providers.microsoft.azure.operators.oracle_to_azure_data_lake_transfer`.
+Please use `airflow.providers.microsoft.azure.transfers.oracle_to_azure_data_lake`.
 """
 
 import warnings
 
-# pylint: disable=unused-import
-from airflow.providers.microsoft.azure.operators.oracle_to_azure_data_lake_transfer import (  # noqa
-    OracleToAzureDataLakeTransfer,
+from airflow.providers.microsoft.azure.transfers.oracle_to_azure_data_lake import (  # noqa
+    OracleToAzureDataLakeOperator,
 )
 
 warnings.warn(
     "This module is deprecated. "
-    "Please use `airflow.providers.microsoft.azure.operators.oracle_to_azure_data_lake_transfer`.",
-    DeprecationWarning, stacklevel=2
+    "Please use `airflow.providers.microsoft.azure.transfers.oracle_to_azure_data_lake`.",
+    DeprecationWarning,
+    stacklevel=2,
 )

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -19,7 +18,7 @@
 #
 import unittest
 
-from airflow import DAG
+from airflow.models.dag import DAG
 from airflow.providers.discord.operators.discord_webhook import DiscordWebhookOperator
 from airflow.utils import timezone
 
@@ -34,31 +33,20 @@ class TestDiscordWebhookOperator(unittest.TestCase):
         'username': 'Airflow Webhook',
         'avatar_url': 'https://static-cdn.avatars.com/my-avatar-path',
         'tts': False,
-        'proxy': 'https://proxy.proxy.com:8888'
+        'proxy': 'https://proxy.proxy.com:8888',
     }
 
     def setUp(self):
-        args = {
-            'owner': 'airflow',
-            'start_date': DEFAULT_DATE
-        }
+        args = {'owner': 'airflow', 'start_date': DEFAULT_DATE}
         self.dag = DAG('test_dag_id', default_args=args)
 
     def test_execute(self):
-        operator = DiscordWebhookOperator(
-            task_id='discord_webhook_task',
-            dag=self.dag,
-            **self._config
-        )
+        operator = DiscordWebhookOperator(task_id='discord_webhook_task', dag=self.dag, **self._config)
 
-        self.assertEqual(self._config['http_conn_id'], operator.http_conn_id)
-        self.assertEqual(self._config['webhook_endpoint'], operator.webhook_endpoint)
-        self.assertEqual(self._config['message'], operator.message)
-        self.assertEqual(self._config['username'], operator.username)
-        self.assertEqual(self._config['avatar_url'], operator.avatar_url)
-        self.assertEqual(self._config['tts'], operator.tts)
-        self.assertEqual(self._config['proxy'], operator.proxy)
-
-
-if __name__ == '__main__':
-    unittest.main()
+        assert self._config['http_conn_id'] == operator.http_conn_id
+        assert self._config['webhook_endpoint'] == operator.webhook_endpoint
+        assert self._config['message'] == operator.message
+        assert self._config['username'] == operator.username
+        assert self._config['avatar_url'] == operator.avatar_url
+        assert self._config['tts'] == operator.tts
+        assert self._config['proxy'] == operator.proxy

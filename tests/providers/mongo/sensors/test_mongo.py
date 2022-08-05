@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -22,8 +21,8 @@ import unittest
 
 import pytest
 
-from airflow import DAG
 from airflow.models import Connection
+from airflow.models.dag import DAG
 from airflow.providers.mongo.hooks.mongo import MongoHook
 from airflow.providers.mongo.sensors.mongo import MongoSensor
 from airflow.utils import db, timezone
@@ -33,17 +32,12 @@ DEFAULT_DATE = timezone.datetime(2017, 1, 1)
 
 @pytest.mark.integration("mongo")
 class TestMongoSensor(unittest.TestCase):
-
     def setUp(self):
         db.merge_conn(
-            Connection(
-                conn_id='mongo_test', conn_type='mongo',
-                host='mongo', port='27017', schema='test'))
+            Connection(conn_id='mongo_test', conn_type='mongo', host='mongo', port='27017', schema='test')
+        )
 
-        args = {
-            'owner': 'airflow',
-            'start_date': DEFAULT_DATE
-        }
+        args = {'owner': 'airflow', 'start_date': DEFAULT_DATE}
         self.dag = DAG('test_dag_id', default_args=args)
 
         hook = MongoHook('mongo_test')
@@ -54,12 +48,22 @@ class TestMongoSensor(unittest.TestCase):
             mongo_conn_id='mongo_test',
             dag=self.dag,
             collection='foo',
-            query={'bar': 'baz'}
+            query={'bar': 'baz'},
         )
 
     def test_poke(self):
-        self.assertTrue(self.sensor.poke(None))
+        assert self.sensor.poke(None)
 
+    def test_sensor_with_db(self):
+        hook = MongoHook('mongo_test')
+        hook.insert_one('nontest', {'1': '2'}, mongo_db='nontest')
 
-if __name__ == '__main__':
-    unittest.main()
+        sensor = MongoSensor(
+            task_id='test_task2',
+            mongo_conn_id='mongo_test',
+            dag=self.dag,
+            collection='nontest',
+            query={'1': '2'},
+            mongo_db="nontest",
+        )
+        assert sensor.poke(None)

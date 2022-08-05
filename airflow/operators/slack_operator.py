@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,14 +15,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""This module is deprecated. Please use `airflow.providers.slack.operators.slack`."""
+"""This module is deprecated. Please use :mod:`airflow.providers.slack.operators.slack`."""
 
 import warnings
 
-# pylint: disable=unused-import
 from airflow.providers.slack.operators.slack import SlackAPIOperator, SlackAPIPostOperator  # noqa
 
 warnings.warn(
     "This module is deprecated. Please use `airflow.providers.slack.operators.slack`.",
-    DeprecationWarning, stacklevel=2
+    DeprecationWarning,
+    stacklevel=2,
 )

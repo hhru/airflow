@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -18,21 +17,38 @@
 # under the License.
 
 import json
+import logging
+import warnings
+from json import JSONDecodeError
+from typing import Dict, Optional, Union
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlparse
 
-from sqlalchemy import Boolean, Column, Integer, String
+from sqlalchemy import Boolean, Column, Integer, String, Text
 from sqlalchemy.ext.declarative import declared_attr
-from sqlalchemy.orm import synonym
+from sqlalchemy.orm import reconstructor, synonym
 
-from airflow.exceptions import AirflowException
+from airflow.configuration import ensure_secrets_loaded
+from airflow.exceptions import AirflowException, AirflowNotFoundException
 from airflow.models.base import ID_LEN, Base
 from airflow.models.crypto import get_fernet
+from airflow.providers_manager import ProvidersManager
 from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow.utils.log.secrets_masker import mask_secret
+from airflow.utils.module_loading import import_string
+
+log = logging.getLogger(__name__)
+
+
+def parse_netloc_to_hostname(*args, **kwargs):
+    """This method is deprecated."""
+    warnings.warn("This method is deprecated.", DeprecationWarning)
+    return _parse_netloc_to_hostname(*args, **kwargs)
 
 
 # Python automatically converts all letters to lowercase in hostname
 # See: https://issues.apache.org/jira/browse/AIRFLOW-3615
-def parse_netloc_to_hostname(uri_parts):
+def _parse_netloc_to_hostname(uri_parts):
+    """Parse a URI string to get correct Hostname."""
     hostname = unquote(uri_parts.hostname or '')
     if '/' in hostname:
         hostname = uri_parts.netloc
@@ -50,12 +66,31 @@ class Connection(Base, LoggingMixin):
     connection information. The idea here is that scripts use references to
     database instances (conn_id) instead of hard coding hostname, logins and
     passwords when using operators or hooks.
+
+    .. seealso::
+        For more information on how to use this class, see: :doc:`/howto/connection`
+
+    :param conn_id: The connection ID.
+    :param conn_type: The connection type.
+    :param description: The connection description.
+    :param host: The host.
+    :param login: The login.
+    :param password: The password.
+    :param schema: The schema.
+    :param port: The port number.
+    :param extra: Extra metadata. Non-standard data such as private/SSH keys can be saved here. JSON
+        encoded object.
+    :param uri: URI address describing connection parameters.
     """
+
+    EXTRA_KEY = '__extra__'
+
     __tablename__ = "connection"
 
     id = Column(Integer(), primary_key=True)
-    conn_id = Column(String(ID_LEN))
-    conn_type = Column(String(500))
+    conn_id = Column(String(ID_LEN), unique=True, nullable=False)
+    conn_type = Column(String(500), nullable=False)
+    description = Column(Text(5000))
     host = Column(String(500))
     schema = Column(String(500))
     login = Column(String(500))
@@ -63,61 +98,34 @@ class Connection(Base, LoggingMixin):
     port = Column(Integer())
     is_encrypted = Column(Boolean, unique=False, default=False)
     is_extra_encrypted = Column(Boolean, unique=False, default=False)
-    _extra = Column('extra', String(5000))
-
-    _types = [
-        ('docker', 'Docker Registry'),
-        ('fs', 'File (path)'),
-        ('ftp', 'FTP'),
-        ('google_cloud_platform', 'Google Cloud Platform'),
-        ('hdfs', 'HDFS'),
-        ('http', 'HTTP'),
-        ('pig_cli', 'Pig Client Wrapper'),
-        ('hive_cli', 'Hive Client Wrapper'),
-        ('hive_metastore', 'Hive Metastore Thrift'),
-        ('hiveserver2', 'Hive Server 2 Thrift'),
-        ('jdbc', 'JDBC Connection'),
-        ('odbc', 'ODBC Connection'),
-        ('jenkins', 'Jenkins'),
-        ('mysql', 'MySQL'),
-        ('postgres', 'Postgres'),
-        ('oracle', 'Oracle'),
-        ('vertica', 'Vertica'),
-        ('presto', 'Presto'),
-        ('s3', 'S3'),
-        ('samba', 'Samba'),
-        ('sqlite', 'Sqlite'),
-        ('ssh', 'SSH'),
-        ('cloudant', 'IBM Cloudant'),
-        ('mssql', 'Microsoft SQL Server'),
-        ('mesos_framework-id', 'Mesos Framework ID'),
-        ('jira', 'JIRA'),
-        ('redis', 'Redis'),
-        ('wasb', 'Azure Blob Storage'),
-        ('databricks', 'Databricks'),
-        ('aws', 'Amazon Web Services'),
-        ('emr', 'Elastic MapReduce'),
-        ('snowflake', 'Snowflake'),
-        ('segment', 'Segment'),
-        ('sqoop', 'Sqoop'),
-        ('azure_data_lake', 'Azure Data Lake'),
-        ('azure_container_instances', 'Azure Container Instances'),
-        ('azure_cosmos', 'Azure CosmosDB'),
-        ('cassandra', 'Cassandra'),
-        ('qubole', 'Qubole'),
-        ('mongo', 'MongoDB'),
-        ('gcpcloudsql', 'Google Cloud SQL'),
-        ('grpc', 'GRPC Connection'),
-    ]
+    _extra = Column('extra', Text())
 
     def __init__(
-            self, conn_id=None, conn_type=None,
-            host=None, login=None, password=None,
-            schema=None, port=None, extra=None,
-            uri=None):
+        self,
+        conn_id: Optional[str] = None,
+        conn_type: Optional[str] = None,
+        description: Optional[str] = None,
+        host: Optional[str] = None,
+        login: Optional[str] = None,
+        password: Optional[str] = None,
+        schema: Optional[str] = None,
+        port: Optional[int] = None,
+        extra: Optional[Union[str, dict]] = None,
+        uri: Optional[str] = None,
+    ):
+        super().__init__()
         self.conn_id = conn_id
+        self.description = description
+        if extra and not isinstance(extra, str):
+            extra = json.dumps(extra)
+        if uri and (conn_type or host or login or password or schema or port or extra):
+            raise AirflowException(
+                "You must create an object using the URI or individual values "
+                "(conn_type, host, login, password, schema, port or extra)."
+                "You can't mix these two ways to create this object."
+            )
         if uri:
-            self.parse_from_uri(uri)
+            self._parse_from_uri(uri)
         else:
             self.conn_type = conn_type
             self.host = host
@@ -126,28 +134,85 @@ class Connection(Base, LoggingMixin):
             self.schema = schema
             self.port = port
             self.extra = extra
+        if self.extra:
+            self._validate_extra(self.extra, self.conn_id)
 
-    def parse_from_uri(self, uri):
-        uri_parts = urlparse(uri)
-        conn_type = uri_parts.scheme
+        if self.password:
+            mask_secret(self.password)
+
+    @staticmethod
+    def _validate_extra(extra, conn_id) -> None:
+        """
+        Here we verify that ``extra`` is a JSON-encoded Python dict.  From Airflow 3.0, we should no
+        longer suppress these errors but raise instead.
+        """
+        if extra is None:
+            return None
+        try:
+            extra_parsed = json.loads(extra)
+            if not isinstance(extra_parsed, dict):
+                warnings.warn(
+                    "Encountered JSON value in `extra` which does not parse as a dictionary in "
+                    f"connection {conn_id!r}. From Airflow 3.0, the `extra` field must contain a JSON "
+                    "representation of a Python dict.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+        except json.JSONDecodeError:
+            warnings.warn(
+                f"Encountered non-JSON in `extra` field for connection {conn_id!r}. Support for "
+                "non-JSON `extra` will be removed in Airflow 3.0",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return None
+
+    @reconstructor
+    def on_db_load(self):
+        if self.password:
+            mask_secret(self.password)
+
+    def parse_from_uri(self, **uri):
+        """This method is deprecated. Please use uri parameter in constructor."""
+        warnings.warn(
+            "This method is deprecated. Please use uri parameter in constructor.", DeprecationWarning
+        )
+        self._parse_from_uri(**uri)
+
+    @staticmethod
+    def _normalize_conn_type(conn_type):
         if conn_type == 'postgresql':
             conn_type = 'postgres'
         elif '-' in conn_type:
             conn_type = conn_type.replace('-', '_')
-        self.conn_type = conn_type
-        self.host = parse_netloc_to_hostname(uri_parts)
+        return conn_type
+
+    def _parse_from_uri(self, uri: str):
+        uri_parts = urlparse(uri)
+        conn_type = uri_parts.scheme
+        self.conn_type = self._normalize_conn_type(conn_type)
+        self.host = _parse_netloc_to_hostname(uri_parts)
         quoted_schema = uri_parts.path[1:]
         self.schema = unquote(quoted_schema) if quoted_schema else quoted_schema
-        self.login = unquote(uri_parts.username) \
-            if uri_parts.username else uri_parts.username
-        self.password = unquote(uri_parts.password) \
-            if uri_parts.password else uri_parts.password
+        self.login = unquote(uri_parts.username) if uri_parts.username else uri_parts.username
+        self.password = unquote(uri_parts.password) if uri_parts.password else uri_parts.password
         self.port = uri_parts.port
         if uri_parts.query:
-            self.extra = json.dumps(dict(parse_qsl(uri_parts.query, keep_blank_values=True)))
+            query = dict(parse_qsl(uri_parts.query, keep_blank_values=True))
+            if self.EXTRA_KEY in query:
+                self.extra = query[self.EXTRA_KEY]
+            else:
+                self.extra = json.dumps(query)
 
     def get_uri(self) -> str:
-        uri = '{}://'.format(str(self.conn_type).lower().replace('_', '-'))
+        """Return connection in URI format"""
+        if '_' in self.conn_type:
+            self.log.warning(
+                f"Connection schemes (type: {str(self.conn_type)}) "
+                f"shall not contain '_' according to RFC3986."
+            )
+
+        uri = f"{str(self.conn_type).lower().replace('_', '-')}://"
 
         authority_block = ''
         if self.login is not None:
@@ -166,33 +231,43 @@ class Connection(Base, LoggingMixin):
             host_block += quote(self.host, safe='')
 
         if self.port:
-            if host_block > '':
-                host_block += ':{}'.format(self.port)
+            if host_block == '' and authority_block == '':
+                host_block += f'@:{self.port}'
             else:
-                host_block += '@:{}'.format(self.port)
+                host_block += f':{self.port}'
 
         if self.schema:
-            host_block += '/{}'.format(quote(self.schema, safe=''))
+            host_block += f"/{quote(self.schema, safe='')}"
 
         uri += host_block
 
-        if self.extra_dejson:
-            uri += '?{}'.format(urlencode(self.extra_dejson))
+        if self.extra:
+            try:
+                query: Optional[str] = urlencode(self.extra_dejson)
+            except TypeError:
+                query = None
+            if query and self.extra_dejson == dict(parse_qsl(query, keep_blank_values=True)):
+                uri += ('?' if self.schema else '/?') + query
+            else:
+                uri += ('?' if self.schema else '/?') + urlencode({self.EXTRA_KEY: self.extra})
 
         return uri
 
-    def get_password(self):
+    def get_password(self) -> Optional[str]:
+        """Return encrypted password."""
         if self._password and self.is_encrypted:
             fernet = get_fernet()
             if not fernet.is_encrypted:
                 raise AirflowException(
-                    "Can't decrypt encrypted password for login={}, \
-                    FERNET_KEY configuration is missing".format(self.login))
+                    f"Can't decrypt encrypted password for login={self.login}  "
+                    f"FERNET_KEY configuration is missing"
+                )
             return fernet.decrypt(bytes(self._password, 'utf-8')).decode()
         else:
             return self._password
 
-    def set_password(self, value):
+    def set_password(self, value: Optional[str]):
+        """Encrypt password and set in object attribute."""
         if value:
             fernet = get_fernet()
             self._password = fernet.encrypt(bytes(value, 'utf-8')).decode()
@@ -200,22 +275,29 @@ class Connection(Base, LoggingMixin):
 
     @declared_attr
     def password(cls):
-        return synonym('_password',
-                       descriptor=property(cls.get_password, cls.set_password))
+        """Password. The value is decrypted/encrypted when reading/setting the value."""
+        return synonym('_password', descriptor=property(cls.get_password, cls.set_password))
 
-    def get_extra(self):
+    def get_extra(self) -> Dict:
+        """Return encrypted extra-data."""
         if self._extra and self.is_extra_encrypted:
             fernet = get_fernet()
             if not fernet.is_encrypted:
                 raise AirflowException(
-                    "Can't decrypt `extra` params for login={},\
-                    FERNET_KEY configuration is missing".format(self.login))
-            return fernet.decrypt(bytes(self._extra, 'utf-8')).decode()
+                    f"Can't decrypt `extra` params for login={self.login}, "
+                    f"FERNET_KEY configuration is missing"
+                )
+            extra_val = fernet.decrypt(bytes(self._extra, 'utf-8')).decode()
         else:
-            return self._extra
+            extra_val = self._extra
+        if extra_val:
+            self._validate_extra(extra_val, self.conn_id)
+        return extra_val
 
-    def set_extra(self, value):
+    def set_extra(self, value: str):
+        """Encrypt extra-data and save in object attribute to object."""
         if value:
+            self._validate_extra(value, self.conn_id)
             fernet = get_fernet()
             self._extra = fernet.encrypt(bytes(value, 'utf-8')).decode()
             self.is_extra_encrypted = fernet.is_encrypted
@@ -225,125 +307,141 @@ class Connection(Base, LoggingMixin):
 
     @declared_attr
     def extra(cls):
-        return synonym('_extra',
-                       descriptor=property(cls.get_extra, cls.set_extra))
+        """Extra data. The value is decrypted/encrypted when reading/setting the value."""
+        return synonym('_extra', descriptor=property(cls.get_extra, cls.set_extra))
 
     def rotate_fernet_key(self):
+        """Encrypts data with a new key. See: :ref:`security/fernet`"""
         fernet = get_fernet()
         if self._password and self.is_encrypted:
             self._password = fernet.rotate(self._password.encode('utf-8')).decode()
         if self._extra and self.is_extra_encrypted:
             self._extra = fernet.rotate(self._extra.encode('utf-8')).decode()
 
-    def get_hook(self):
-        if self.conn_type == 'mysql':
-            from airflow.providers.mysql.hooks.mysql import MySqlHook
-            return MySqlHook(mysql_conn_id=self.conn_id)
-        elif self.conn_type == 'google_cloud_platform':
-            from airflow.gcp.hooks.bigquery import BigQueryHook
-            return BigQueryHook(bigquery_conn_id=self.conn_id)
-        elif self.conn_type == 'postgres':
-            from airflow.providers.postgres.hooks.postgres import PostgresHook
-            return PostgresHook(postgres_conn_id=self.conn_id)
-        elif self.conn_type == 'pig_cli':
-            from airflow.providers.apache.pig.hooks.pig import PigCliHook
-            return PigCliHook(pig_cli_conn_id=self.conn_id)
-        elif self.conn_type == 'hive_cli':
-            from airflow.providers.apache.hive.hooks.hive import HiveCliHook
-            return HiveCliHook(hive_cli_conn_id=self.conn_id)
-        elif self.conn_type == 'presto':
-            from airflow.providers.presto.hooks.presto import PrestoHook
-            return PrestoHook(presto_conn_id=self.conn_id)
-        elif self.conn_type == 'hiveserver2':
-            from airflow.providers.apache.hive.hooks.hive import HiveServer2Hook
-            return HiveServer2Hook(hiveserver2_conn_id=self.conn_id)
-        elif self.conn_type == 'sqlite':
-            from airflow.providers.sqlite.hooks.sqlite import SqliteHook
-            return SqliteHook(sqlite_conn_id=self.conn_id)
-        elif self.conn_type == 'jdbc':
-            from airflow.providers.jdbc.hooks.jdbc import JdbcHook
-            return JdbcHook(jdbc_conn_id=self.conn_id)
-        elif self.conn_type == 'mssql':
-            from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
-            return MsSqlHook(mssql_conn_id=self.conn_id)
-        elif self.conn_type == 'odbc':
-            from airflow.providers.odbc.hooks.odbc import OdbcHook
-            return OdbcHook(odbc_conn_id=self.conn_id)
-        elif self.conn_type == 'oracle':
-            from airflow.providers.oracle.hooks.oracle import OracleHook
-            return OracleHook(oracle_conn_id=self.conn_id)
-        elif self.conn_type == 'vertica':
-            from airflow.providers.vertica.hooks.vertica import VerticaHook
-            return VerticaHook(vertica_conn_id=self.conn_id)
-        elif self.conn_type == 'cloudant':
-            from airflow.providers.cloudant.hooks.cloudant import CloudantHook
-            return CloudantHook(cloudant_conn_id=self.conn_id)
-        elif self.conn_type == 'jira':
-            from airflow.providers.jira.hooks.jira import JiraHook
-            return JiraHook(jira_conn_id=self.conn_id)
-        elif self.conn_type == 'redis':
-            from airflow.providers.redis.hooks.redis import RedisHook
-            return RedisHook(redis_conn_id=self.conn_id)
-        elif self.conn_type == 'wasb':
-            from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
-            return WasbHook(wasb_conn_id=self.conn_id)
-        elif self.conn_type == 'docker':
-            from airflow.providers.docker.hooks.docker import DockerHook
-            return DockerHook(docker_conn_id=self.conn_id)
-        elif self.conn_type == 'azure_data_lake':
-            from airflow.providers.microsoft.azure.hooks.azure_data_lake import AzureDataLakeHook
-            return AzureDataLakeHook(azure_data_lake_conn_id=self.conn_id)
-        elif self.conn_type == 'azure_cosmos':
-            from airflow.providers.microsoft.azure.hooks.azure_cosmos import AzureCosmosDBHook
-            return AzureCosmosDBHook(azure_cosmos_conn_id=self.conn_id)
-        elif self.conn_type == 'cassandra':
-            from airflow.providers.apache.cassandra.hooks.cassandra import CassandraHook
-            return CassandraHook(cassandra_conn_id=self.conn_id)
-        elif self.conn_type == 'mongo':
-            from airflow.providers.mongo.hooks.mongo import MongoHook
-            return MongoHook(conn_id=self.conn_id)
-        elif self.conn_type == 'gcpcloudsql':
-            from airflow.gcp.hooks.cloud_sql import CloudSQLDatabaseHook
-            return CloudSQLDatabaseHook(gcp_cloudsql_conn_id=self.conn_id)
-        elif self.conn_type == 'grpc':
-            from airflow.providers.grpc.hooks.grpc import GrpcHook
-            return GrpcHook(grpc_conn_id=self.conn_id)
-        raise AirflowException("Unknown hook type {}".format(self.conn_type))
+    def get_hook(self, *, hook_params=None):
+        """Return hook based on conn_type"""
+        hook = ProvidersManager().hooks.get(self.conn_type, None)
+
+        if hook is None:
+            raise AirflowException(f'Unknown hook type "{self.conn_type}"')
+        try:
+            hook_class = import_string(hook.hook_class_name)
+        except ImportError:
+            warnings.warn(
+                "Could not import %s when discovering %s %s",
+                hook.hook_class_name,
+                hook.hook_name,
+                hook.package_name,
+            )
+            raise
+        if hook_params is None:
+            hook_params = {}
+        return hook_class(**{hook.connection_id_attribute_name: self.conn_id}, **hook_params)
 
     def __repr__(self):
-        return self.conn_id
+        return self.conn_id or ''
 
     def log_info(self):
-        return ("id: {}. Host: {}, Port: {}, Schema: {}, "
-                "Login: {}, Password: {}, extra: {}".
-                format(self.conn_id,
-                       self.host,
-                       self.port,
-                       self.schema,
-                       self.login,
-                       "XXXXXXXX" if self.password else None,
-                       "XXXXXXXX" if self.extra_dejson else None))
+        """
+        This method is deprecated. You can read each field individually or use the
+        default representation (`__repr__`).
+        """
+        warnings.warn(
+            "This method is deprecated. You can read each field individually or "
+            "use the default representation (__repr__).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return (
+            f"id: {self.conn_id}. Host: {self.host}, Port: {self.port}, Schema: {self.schema}, "
+            f"Login: {self.login}, Password: {'XXXXXXXX' if self.password else None}, "
+            f"extra: {'XXXXXXXX' if self.extra_dejson else None}"
+        )
 
     def debug_info(self):
-        return ("id: {}. Host: {}, Port: {}, Schema: {}, "
-                "Login: {}, Password: {}, extra: {}".
-                format(self.conn_id,
-                       self.host,
-                       self.port,
-                       self.schema,
-                       self.login,
-                       "XXXXXXXX" if self.password else None,
-                       self.extra_dejson))
+        """
+        This method is deprecated. You can read each field individually or use the
+        default representation (`__repr__`).
+        """
+        warnings.warn(
+            "This method is deprecated. You can read each field individually or "
+            "use the default representation (__repr__).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return (
+            f"id: {self.conn_id}. Host: {self.host}, Port: {self.port}, Schema: {self.schema}, "
+            f"Login: {self.login}, Password: {'XXXXXXXX' if self.password else None}, "
+            f"extra: {self.extra_dejson}"
+        )
+
+    def test_connection(self):
+        """Calls out get_hook method and executes test_connection method on that."""
+        status, message = False, ''
+        try:
+            hook = self.get_hook()
+            if getattr(hook, 'test_connection', False):
+                status, message = hook.test_connection()
+            else:
+                message = (
+                    f"Hook {hook.__class__.__name__} doesn't implement or inherit test_connection method"
+                )
+        except Exception as e:
+            message = str(e)
+
+        return status, message
 
     @property
-    def extra_dejson(self):
+    def extra_dejson(self) -> Dict:
         """Returns the extra property by deserializing json."""
         obj = {}
         if self.extra:
             try:
                 obj = json.loads(self.extra)
-            except Exception as e:
-                self.log.exception(e)
-                self.log.error("Failed parsing the json for conn_id %s", self.conn_id)
+
+            except JSONDecodeError:
+                self.log.exception("Failed parsing the json for conn_id %s", self.conn_id)
+
+            # Mask sensitive keys from this list
+            mask_secret(obj)
 
         return obj
+
+    @classmethod
+    def get_connection_from_secrets(cls, conn_id: str) -> 'Connection':
+        """
+        Get connection by conn_id.
+
+        :param conn_id: connection id
+        :return: connection
+        """
+        for secrets_backend in ensure_secrets_loaded():
+            try:
+                conn = secrets_backend.get_connection(conn_id=conn_id)
+                if conn:
+                    return conn
+            except Exception:
+                log.exception(
+                    'Unable to retrieve connection from secrets backend (%s). '
+                    'Checking subsequent secrets backend.',
+                    type(secrets_backend).__name__,
+                )
+
+        raise AirflowNotFoundException(f"The conn_id `{conn_id}` isn't defined")
+
+    @classmethod
+    def from_json(cls, value, conn_id=None) -> 'Connection':
+        kwargs = json.loads(value)
+        extra = kwargs.pop('extra', None)
+        if extra:
+            kwargs['extra'] = extra if isinstance(extra, str) else json.dumps(extra)
+        conn_type = kwargs.pop('conn_type', None)
+        if conn_type:
+            kwargs['conn_type'] = cls._normalize_conn_type(conn_type)
+        port = kwargs.pop('port', None)
+        if port:
+            try:
+                kwargs['port'] = int(port)
+            except ValueError:
+                raise ValueError(f"Expected integer value for `port`, but got {port!r} instead.")
+        return Connection(conn_id=conn_id, **kwargs)

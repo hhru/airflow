@@ -19,13 +19,13 @@ This is an example dag for using `AWSDataSyncOperator` in a more complex manner.
 
 - Try to get a TaskArn. If one exists, update it.
 - If no tasks exist, try to create a new DataSync Task.
-    - If source and destination locations dont exist for the new task, create them first
+    - If source and destination locations don't exist for the new task, create them first
 - If many tasks exist, raise an Exception
 - After getting or creating a DataSync Task, run it
 
 This DAG relies on the following environment variables:
 
-* SOURCE_LOCATION_URI - Source location URI, usually on premisis SMB or NFS
+* SOURCE_LOCATION_URI - Source location URI, usually on premises SMB or NFS
 * DESTINATION_LOCATION_URI - Destination location URI, usually S3
 * CREATE_TASK_KWARGS - Passed to boto3.create_task(**kwargs)
 * CREATE_SOURCE_LOCATION_KWARGS - Passed to boto3.create_location(**kwargs)
@@ -34,69 +34,58 @@ This DAG relies on the following environment variables:
 """
 
 import json
+import re
+from datetime import datetime
 from os import getenv
 
-from airflow import models, utils
-from airflow.providers.amazon.aws.operators.datasync import AWSDataSyncOperator
+from airflow import models
+from airflow.providers.amazon.aws.operators.datasync import DataSyncOperator
 
 # [START howto_operator_datasync_2_args]
-SOURCE_LOCATION_URI = getenv(
-    "SOURCE_LOCATION_URI", "smb://hostname/directory/")
+SOURCE_LOCATION_URI = getenv("SOURCE_LOCATION_URI", "smb://hostname/directory/")
 
-DESTINATION_LOCATION_URI = getenv(
-    "DESTINATION_LOCATION_URI", "s3://mybucket/prefix")
+DESTINATION_LOCATION_URI = getenv("DESTINATION_LOCATION_URI", "s3://mybucket/prefix")
 
 default_create_task_kwargs = '{"Name": "Created by Airflow"}'
-CREATE_TASK_KWARGS = json.loads(
-    getenv("CREATE_TASK_KWARGS", default_create_task_kwargs)
-)
+CREATE_TASK_KWARGS = json.loads(getenv("CREATE_TASK_KWARGS", default_create_task_kwargs))
 
 default_create_source_location_kwargs = "{}"
 CREATE_SOURCE_LOCATION_KWARGS = json.loads(
-    getenv("CREATE_SOURCE_LOCATION_KWARGS",
-           default_create_source_location_kwargs)
+    getenv("CREATE_SOURCE_LOCATION_KWARGS", default_create_source_location_kwargs)
 )
 
-bucket_access_role_arn = (
-    "arn:aws:iam::11112223344:role/r-11112223344-my-bucket-access-role"
-)
+bucket_access_role_arn = "arn:aws:iam::11112223344:role/r-11112223344-my-bucket-access-role"
 default_destination_location_kwargs = """\
 {"S3BucketArn": "arn:aws:s3:::mybucket",
-    "S3Config": {"BucketAccessRoleArn": bucket_access_role_arn}
+    "S3Config": {"BucketAccessRoleArn":
+    "arn:aws:iam::11112223344:role/r-11112223344-my-bucket-access-role"}
 }"""
 CREATE_DESTINATION_LOCATION_KWARGS = json.loads(
-    getenv("CREATE_DESTINATION_LOCATION_KWARGS",
-           default_destination_location_kwargs)
+    getenv("CREATE_DESTINATION_LOCATION_KWARGS", re.sub(r"[\s+]", '', default_destination_location_kwargs))
 )
 
 default_update_task_kwargs = '{"Name": "Updated by Airflow"}'
-UPDATE_TASK_KWARGS = json.loads(
-    getenv("UPDATE_TASK_KWARGS", default_update_task_kwargs)
-)
+UPDATE_TASK_KWARGS = json.loads(getenv("UPDATE_TASK_KWARGS", default_update_task_kwargs))
 
-default_args = {"start_date": utils.dates.days_ago(1)}
 # [END howto_operator_datasync_2_args]
 
 with models.DAG(
     "example_datasync_2",
-    default_args=default_args,
     schedule_interval=None,  # Override to match your needs
+    start_date=datetime(2021, 1, 1),
+    catchup=False,
     tags=['example'],
 ) as dag:
 
     # [START howto_operator_datasync_2]
-    datasync_task = AWSDataSyncOperator(
-        aws_conn_id="aws_default",
+    datasync_task = DataSyncOperator(
         task_id="datasync_task",
         source_location_uri=SOURCE_LOCATION_URI,
         destination_location_uri=DESTINATION_LOCATION_URI,
-
         create_task_kwargs=CREATE_TASK_KWARGS,
         create_source_location_kwargs=CREATE_SOURCE_LOCATION_KWARGS,
         create_destination_location_kwargs=CREATE_DESTINATION_LOCATION_KWARGS,
-
         update_task_kwargs=UPDATE_TASK_KWARGS,
-
-        delete_task_after_execution=True
+        delete_task_after_execution=True,
     )
     # [END howto_operator_datasync_2]

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -19,13 +18,17 @@
 
 import unittest
 
+import pytest
+
 from airflow.utils.weight_rule import WeightRule
 
 
 class TestWeightRule(unittest.TestCase):
-
     def test_valid_weight_rules(self):
-        self.assertTrue(WeightRule.is_valid(WeightRule.DOWNSTREAM))
-        self.assertTrue(WeightRule.is_valid(WeightRule.UPSTREAM))
-        self.assertTrue(WeightRule.is_valid(WeightRule.ABSOLUTE))
-        self.assertEqual(len(WeightRule.all_weight_rules()), 3)
+        assert WeightRule.is_valid(WeightRule.DOWNSTREAM)
+        assert WeightRule.is_valid(WeightRule.UPSTREAM)
+        assert WeightRule.is_valid(WeightRule.ABSOLUTE)
+        assert len(WeightRule.all_weight_rules()) == 3
+
+        with pytest.raises(ValueError):
+            WeightRule("NOT_EXIST_WEIGHT_RULE")

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,9 +15,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.providers.apache.hive.hooks.hive import HiveMetastoreHook
+from airflow.sensors.base import BaseSensorOperator
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class HivePartitionSensor(BaseSensorOperator):
@@ -31,29 +34,32 @@ class HivePartitionSensor(BaseSensorOperator):
 
     :param table: The name of the table to wait for, supports the dot
         notation (my_database.my_table)
-    :type table: str
     :param partition: The partition clause to wait for. This is passed as
         is to the metastore Thrift client ``get_partitions_by_filter`` method,
         and apparently supports SQL like notation as in ``ds='2015-01-01'
         AND type='value'`` and comparison operators as in ``"ds>=2015-01-01"``
-    :type partition: str
-    :param metastore_conn_id: reference to the metastore thrift service
-        connection id
-    :type metastore_conn_id: str
+    :param metastore_conn_id: reference to the
+        :ref: `metastore thrift service connection id <howto/connection:hive_metastore>`
     """
-    template_fields = ('schema', 'table', 'partition',)
+
+    template_fields: Sequence[str] = (
+        'schema',
+        'table',
+        'partition',
+    )
     ui_color = '#C5CAE9'
 
-    @apply_defaults
-    def __init__(self,
-                 table, partition="ds='{{ ds }}'",
-                 metastore_conn_id='metastore_default',
-                 schema='default',
-                 poke_interval=60 * 3,
-                 *args,
-                 **kwargs):
-        super().__init__(
-            poke_interval=poke_interval, *args, **kwargs)
+    def __init__(
+        self,
+        *,
+        table: str,
+        partition: Optional[str] = "ds='{{ ds }}'",
+        metastore_conn_id: str = 'metastore_default',
+        schema: str = 'default',
+        poke_interval: int = 60 * 3,
+        **kwargs: Any,
+    ):
+        super().__init__(poke_interval=poke_interval, **kwargs)
         if not partition:
             partition = "ds='{{ ds }}'"
         self.metastore_conn_id = metastore_conn_id
@@ -61,15 +67,10 @@ class HivePartitionSensor(BaseSensorOperator):
         self.partition = partition
         self.schema = schema
 
-    def poke(self, context):
+    def poke(self, context: "Context") -> bool:
         if '.' in self.table:
             self.schema, self.table = self.table.split('.')
-        self.log.info(
-            'Poking for table %s.%s, partition %s', self.schema, self.table, self.partition
-        )
+        self.log.info('Poking for table %s.%s, partition %s', self.schema, self.table, self.partition)
         if not hasattr(self, 'hook'):
-            from airflow.providers.apache.hive.hooks.hive import HiveMetastoreHook
-            self.hook = HiveMetastoreHook(
-                metastore_conn_id=self.metastore_conn_id)
-        return self.hook.check_for_partition(
-            self.schema, self.table, self.partition)
+            hook = HiveMetastoreHook(metastore_conn_id=self.metastore_conn_id)
+        return hook.check_for_partition(self.schema, self.table, self.partition)

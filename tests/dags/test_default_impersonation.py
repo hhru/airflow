@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -40,7 +39,10 @@ test_command = dedent(
         echo current user $(whoami) is not {user}!
         exit 1
     fi
-    """.format(user=deelevated_user))
+    """.format(
+        user=deelevated_user
+    )
+)
 
 task = BashOperator(
     task_id='test_deelevated_user',

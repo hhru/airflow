@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,9 +15,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import TYPE_CHECKING, Any, Sequence
 
-from airflow.sensors.sql_sensor import SqlSensor
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.sql import SqlSensor
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class MetastorePartitionSensor(SqlSensor):
@@ -30,28 +32,27 @@ class MetastorePartitionSensor(SqlSensor):
     way that wouldn't leverage the indexes.
 
     :param schema: the schema
-    :type schema: str
     :param table: the table
-    :type table: str
     :param partition_name: the partition name, as defined in the PARTITIONS
         table of the Metastore. Order of the fields does matter.
         Examples: ``ds=2016-01-01`` or
         ``ds=2016-01-01/sub=foo`` for a sub partitioned table
-    :type partition_name: str
     :param mysql_conn_id: a reference to the MySQL conn_id for the metastore
-    :type mysql_conn_id: str
     """
-    template_fields = ('partition_name', 'table', 'schema')
-    ui_color = '#8da7be'
 
-    @apply_defaults
-    def __init__(self,
-                 table,
-                 partition_name,
-                 schema="default",
-                 mysql_conn_id="metastore_mysql",
-                 *args,
-                 **kwargs):
+    template_fields: Sequence[str] = ('partition_name', 'table', 'schema')
+    ui_color = '#8da7be'
+    poke_context_fields = ('partition_name', 'table', 'schema', 'mysql_conn_id')
+
+    def __init__(
+        self,
+        *,
+        table: str,
+        partition_name: str,
+        schema: str = "default",
+        mysql_conn_id: str = "metastore_mysql",
+        **kwargs: Any,
+    ):
 
         self.partition_name = partition_name
         self.table = table
@@ -63,9 +64,9 @@ class MetastorePartitionSensor(SqlSensor):
         # The inheritance model needs to be reworked in order to support overriding args/
         # kwargs with arguments here, then 'conn_id' and 'sql' can be passed into the
         # constructor below and apply_defaults will no longer throw an exception.
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
-    def poke(self, context):
+    def poke(self, context: "Context") -> Any:
         if self.first_poke:
             self.first_poke = False
             if '.' in self.table:
@@ -79,5 +80,7 @@ class MetastorePartitionSensor(SqlSensor):
                 B0.TBL_NAME = '{self.table}' AND
                 C0.NAME = '{self.schema}' AND
                 A0.PART_NAME = '{self.partition_name}';
-            """.format(self=self)
+            """.format(
+                self=self
+            )
         return super().poke(context)

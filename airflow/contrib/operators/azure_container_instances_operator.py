@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,18 +16,18 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-This module is deprecated. Please use `airflow.providers.microsoft.azure.operators.azure_container_instances`.
+This module is deprecated. Please use
+`airflow.providers.microsoft.azure.operators.container_instances`.
 """
-
 import warnings
 
-# pylint: disable=unused-import
-from airflow.providers.microsoft.azure.operators.azure_container_instances import (  # noqa
+from airflow.providers.microsoft.azure.operators.container_instances import (  # noqa
     AzureContainerInstancesOperator,
 )
 
 warnings.warn(
     "This module is deprecated. "
-    "Please use `airflow.providers.microsoft.azure.operators.azure_container_instances`.",
-    DeprecationWarning, stacklevel=2
+    "Please use `airflow.providers.microsoft.azure.operators.container_instances`.",
+    DeprecationWarning,
+    stacklevel=2,
 )

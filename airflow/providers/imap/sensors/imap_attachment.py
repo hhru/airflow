@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,12 +15,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-This module allows you to poke for attachments on a mail server.
-"""
+"""This module allows you to poke for attachments on a mail server."""
+from typing import TYPE_CHECKING, Sequence
+
 from airflow.providers.imap.hooks.imap import ImapHook
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.base import BaseSensorOperator
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class ImapAttachmentSensor(BaseSensorOperator):
@@ -29,31 +30,28 @@ class ImapAttachmentSensor(BaseSensorOperator):
     Waits for a specific attachment on a mail server.
 
     :param attachment_name: The name of the attachment that will be checked.
-    :type attachment_name: str
     :param check_regex: If set to True the attachment's name will be parsed as regular expression.
         Through this you can get a broader set of attachments
         that it will look for than just only the equality of the attachment name.
-    :type check_regex: bool
     :param mail_folder: The mail folder in where to search for the attachment.
-    :type mail_folder: str
     :param mail_filter: If set other than 'All' only specific mails will be checked.
         See :py:meth:`imaplib.IMAP4.search` for details.
-    :type mail_filter: str
-    :param conn_id: The connection to run the sensor against.
-    :type conn_id: str
+    :param imap_conn_id: The :ref:`imap connection id <howto/connection:imap>` to run the sensor against.
     """
-    template_fields = ('attachment_name', 'mail_filter')
 
-    @apply_defaults
-    def __init__(self,
-                 attachment_name,
-                 check_regex=False,
-                 mail_folder='INBOX',
-                 mail_filter='All',
-                 conn_id='imap_default',
-                 *args,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+    template_fields: Sequence[str] = ('attachment_name', 'mail_filter')
+
+    def __init__(
+        self,
+        *,
+        attachment_name,
+        check_regex=False,
+        mail_folder='INBOX',
+        mail_filter='All',
+        conn_id='imap_default',
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
 
         self.attachment_name = attachment_name
         self.check_regex = check_regex
@@ -61,12 +59,11 @@ class ImapAttachmentSensor(BaseSensorOperator):
         self.mail_filter = mail_filter
         self.conn_id = conn_id
 
-    def poke(self, context):
+    def poke(self, context: 'Context') -> bool:
         """
         Pokes for a mail attachment on the mail server.
 
         :param context: The context that is being provided when poking.
-        :type context: dict
         :return: True if attachment with the given name is present and False if not.
         :rtype: bool
         """
@@ -77,5 +74,5 @@ class ImapAttachmentSensor(BaseSensorOperator):
                 name=self.attachment_name,
                 check_regex=self.check_regex,
                 mail_folder=self.mail_folder,
-                mail_filter=self.mail_filter
+                mail_filter=self.mail_filter,
             )

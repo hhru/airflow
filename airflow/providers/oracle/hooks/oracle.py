@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,23 +16,43 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import warnings
 from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 import cx_Oracle
 import numpy
 
-from airflow.hooks.dbapi_hook import DbApiHook
+from airflow.hooks.dbapi import DbApiHook
+
+PARAM_TYPES = {bool, float, int, str}
+
+
+def _map_param(value):
+    if value in PARAM_TYPES:
+        # In this branch, value is a Python type; calling it produces
+        # an instance of the type which is understood by the Oracle driver
+        # in the out parameter mapping mechanism.
+        value = value()
+    return value
 
 
 class OracleHook(DbApiHook):
     """
     Interact with Oracle SQL.
+
+    :param oracle_conn_id: The :ref:`Oracle connection id <howto/connection:oracle>`
+        used for Oracle credentials.
     """
+
     conn_name_attr = 'oracle_conn_id'
     default_conn_name = 'oracle_default'
-    supports_autocommit = False
+    conn_type = 'oracle'
+    hook_name = 'Oracle'
 
-    def get_conn(self):
+    supports_autocommit = True
+
+    def get_conn(self) -> 'OracleHook':
         """
         Returns a oracle connection object
         Optional parameters for using a custom DSN connection
@@ -42,32 +61,53 @@ class OracleHook(DbApiHook):
         (from the Oracle names server or tnsnames.ora file)
         or is a string like the one returned from makedsn().
 
-        :param dsn: the host address for the Oracle server
+        :param dsn: the data source name for the Oracle server
         :param service_name: the db_unique_name of the database
               that you are connecting to (CONNECT_DATA part of TNS)
+        :param sid: Oracle System ID that identifies a particular
+              database on a system
 
         You can set these parameters in the extra fields of your connection
-        as in ``{ "dsn":"some.host.address" , "service_name":"some.service.name" }``
+        as in
+
+        .. code-block:: python
+
+           {"dsn": ("(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=host)(PORT=1521))(CONNECT_DATA=(SID=sid)))")}
+
         see more param detail in
         `cx_Oracle.connect <https://cx-oracle.readthedocs.io/en/latest/module.html#cx_Oracle.connect>`_
-        """
-        conn = self.get_connection(self.oracle_conn_id)
-        conn_config = {
-            'user': conn.login,
-            'password': conn.password
-        }
-        dsn = conn.extra_dejson.get('dsn', None)
-        sid = conn.extra_dejson.get('sid', None)
-        mod = conn.extra_dejson.get('module', None)
 
-        service_name = conn.extra_dejson.get('service_name', None)
+
+        """
+        conn = self.get_connection(self.oracle_conn_id)  # type: ignore[attr-defined]
+        conn_config = {'user': conn.login, 'password': conn.password}
+        sid = conn.extra_dejson.get('sid')
+        mod = conn.extra_dejson.get('module')
+        schema = conn.schema
+
+        service_name = conn.extra_dejson.get('service_name')
         port = conn.port if conn.port else 1521
-        if dsn and sid and not service_name:
-            conn_config['dsn'] = cx_Oracle.makedsn(dsn, port, sid)
-        elif dsn and service_name and not sid:
-            conn_config['dsn'] = cx_Oracle.makedsn(dsn, port, service_name=service_name)
+        if conn.host and sid and not service_name:
+            conn_config['dsn'] = cx_Oracle.makedsn(conn.host, port, sid)
+        elif conn.host and service_name and not sid:
+            conn_config['dsn'] = cx_Oracle.makedsn(conn.host, port, service_name=service_name)
         else:
-            conn_config['dsn'] = conn.host
+            dsn = conn.extra_dejson.get('dsn')
+            if dsn is None:
+                dsn = conn.host
+                if conn.port is not None:
+                    dsn += ":" + str(conn.port)
+                if service_name:
+                    dsn += "/" + service_name
+                elif conn.schema:
+                    warnings.warn(
+                        """Using conn.schema to pass the Oracle Service Name is deprecated.
+                        Please use conn.extra.service_name instead.""",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                    dsn += "/" + conn.schema
+            conn_config['dsn'] = dsn
 
         if 'encoding' in conn.extra_dejson:
             conn_config['encoding'] = conn.extra_dejson.get('encoding')
@@ -111,9 +151,24 @@ class OracleHook(DbApiHook):
         if mod is not None:
             conn.module = mod
 
+        # if Connection.schema is defined, set schema after connecting successfully
+        # cannot be part of conn_config
+        # https://cx-oracle.readthedocs.io/en/latest/api_manual/connection.html?highlight=schema#Connection.current_schema
+        # Only set schema when not using conn.schema as Service Name
+        if schema and service_name:
+            conn.current_schema = schema
+
         return conn
 
-    def insert_rows(self, table, rows, target_fields=None, commit_every=1000):
+    def insert_rows(
+        self,
+        table: str,
+        rows: List[tuple],
+        target_fields=None,
+        commit_every: int = 1000,
+        replace: Optional[bool] = False,
+        **kwargs,
+    ) -> None:
         """
         A generic way to insert a set of tuples into a table,
         the whole set of inserts is treated as one transaction
@@ -126,26 +181,22 @@ class OracleHook(DbApiHook):
 
         :param table: target Oracle table, use dot notation to target a
             specific database
-        :type table: str
         :param rows: the rows to insert into the table
-        :type rows: iterable of tuples
         :param target_fields: the names of the columns to fill in the table
-        :type target_fields: iterable of str
         :param commit_every: the maximum number of rows to insert in one transaction
             Default 1000, Set greater than 0.
             Set 1 to insert each row in each single transaction
-        :type commit_every: int
+        :param replace: Whether to replace instead of insert
         """
         if target_fields:
             target_fields = ', '.join(target_fields)
-            target_fields = '({})'.format(target_fields)
+            target_fields = f'({target_fields})'
         else:
             target_fields = ''
         conn = self.get_conn()
-        cur = conn.cursor()
         if self.supports_autocommit:
-            cur.execute('SET autocommit = 0')
-        conn.commit()
+            self.set_autocommit(conn, False)
+        cur = conn.cursor()  # type: ignore[attr-defined]
         i = 0
         for row in rows:
             i += 1
@@ -155,32 +206,34 @@ class OracleHook(DbApiHook):
                     lst.append("'" + str(cell).replace("'", "''") + "'")
                 elif cell is None:
                     lst.append('NULL')
-                elif type(cell) == float and \
-                        numpy.isnan(cell):  # coerce numpy NaN to NULL
+                elif isinstance(cell, float) and numpy.isnan(cell):  # coerce numpy NaN to NULL
                     lst.append('NULL')
                 elif isinstance(cell, numpy.datetime64):
                     lst.append("'" + str(cell) + "'")
                 elif isinstance(cell, datetime):
-                    lst.append("to_date('" +
-                               cell.strftime('%Y-%m-%d %H:%M:%S') +
-                               "','YYYY-MM-DD HH24:MI:SS')")
+                    lst.append(
+                        "to_date('" + cell.strftime('%Y-%m-%d %H:%M:%S') + "','YYYY-MM-DD HH24:MI:SS')"
+                    )
                 else:
                     lst.append(str(cell))
             values = tuple(lst)
-            sql = 'INSERT /*+ APPEND */ ' \
-                  'INTO {0} {1} VALUES ({2})'.format(table,
-                                                     target_fields,
-                                                     ','.join(values))
+            sql = f"INSERT /*+ APPEND */ INTO {table} {target_fields} VALUES ({','.join(values)})"
             cur.execute(sql)
             if i % commit_every == 0:
-                conn.commit()
+                conn.commit()  # type: ignore[attr-defined]
                 self.log.info('Loaded %s into %s rows so far', i, table)
-        conn.commit()
+        conn.commit()  # type: ignore[attr-defined]
         cur.close()
-        conn.close()
+        conn.close()  # type: ignore[attr-defined]
         self.log.info('Done loading. Loaded a total of %s rows', i)
 
-    def bulk_insert_rows(self, table, rows, target_fields=None, commit_every=5000):
+    def bulk_insert_rows(
+        self,
+        table: str,
+        rows: List[tuple],
+        target_fields: Optional[List[str]] = None,
+        commit_every: int = 5000,
+    ):
         """
         A performant bulk insert for cx_Oracle
         that uses prepared statements via `executemany()`.
@@ -188,20 +241,18 @@ class OracleHook(DbApiHook):
 
         :param table: target Oracle table, use dot notation to target a
             specific database
-        :type table: str
         :param rows: the rows to insert into the table
-        :type rows: iterable of tuples
         :param target_fields: the names of the columns to fill in the table, default None.
             If None, each rows should have some order as table columns name
-        :type target_fields: iterable of str Or None
         :param commit_every: the maximum number of rows to insert in one transaction
             Default 5000. Set greater than 0. Set 1 to insert each row in each transaction
-        :type commit_every: int
         """
         if not rows:
             raise ValueError("parameter rows could not be None or empty iterable")
         conn = self.get_conn()
-        cursor = conn.cursor()
+        if self.supports_autocommit:
+            self.set_autocommit(conn, False)
+        cursor = conn.cursor()  # type: ignore[attr-defined]
         values_base = target_fields if target_fields else rows[0]
         prepared_stm = 'insert into {tablename} {columns} values ({values})'.format(
             tablename=table,
@@ -217,14 +268,84 @@ class OracleHook(DbApiHook):
             if row_count % commit_every == 0:
                 cursor.prepare(prepared_stm)
                 cursor.executemany(None, row_chunk)
-                conn.commit()
+                conn.commit()  # type: ignore[attr-defined]
                 self.log.info('[%s] inserted %s rows', table, row_count)
                 # Empty chunk
                 row_chunk = []
         # Commit the leftover chunk
         cursor.prepare(prepared_stm)
         cursor.executemany(None, row_chunk)
-        conn.commit()
+        conn.commit()  # type: ignore[attr-defined]
         self.log.info('[%s] inserted %s rows', table, row_count)
         cursor.close()
-        conn.close()
+        conn.close()  # type: ignore[attr-defined]
+
+    def callproc(
+        self,
+        identifier: str,
+        autocommit: bool = False,
+        parameters: Optional[Union[List, Dict]] = None,
+    ) -> Optional[Union[List, Dict]]:
+        """
+        Call the stored procedure identified by the provided string.
+
+        Any 'OUT parameters' must be provided with a value of either the
+        expected Python type (e.g., `int`) or an instance of that type.
+
+        The return value is a list or mapping that includes parameters in
+        both directions; the actual return type depends on the type of the
+        provided `parameters` argument.
+
+        See
+        https://cx-oracle.readthedocs.io/en/latest/api_manual/cursor.html#Cursor.var
+        for further reference.
+        """
+        if parameters is None:
+            parameters = []
+
+        args = ",".join(
+            f":{name}"
+            for name in (parameters if isinstance(parameters, dict) else range(1, len(parameters) + 1))
+        )
+
+        sql = f"BEGIN {identifier}({args}); END;"
+
+        def handler(cursor):
+            if cursor.bindvars is None:
+                return
+
+            if isinstance(cursor.bindvars, list):
+                return [v.getvalue() for v in cursor.bindvars]
+
+            if isinstance(cursor.bindvars, dict):
+                return {n: v.getvalue() for (n, v) in cursor.bindvars.items()}
+
+            raise TypeError(f"Unexpected bindvars: {cursor.bindvars!r}")
+
+        result = self.run(
+            sql,
+            autocommit=autocommit,
+            parameters=(
+                {name: _map_param(value) for (name, value) in parameters.items()}
+                if isinstance(parameters, dict)
+                else [_map_param(value) for value in parameters]
+            ),
+            handler=handler,
+        )
+
+        return result
+
+    # TODO: Merge this implementation back to DbApiHook when dropping
+    # support for Airflow 2.2.
+    def test_connection(self):
+        """Tests the connection by executing a select 1 from dual query"""
+        status, message = False, ''
+        try:
+            if self.get_first("select 1 from dual"):
+                status = True
+                message = 'Connection successfully tested'
+        except Exception as e:
+            status = False
+            message = str(e)
+
+        return status, message

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,9 +16,13 @@
 # specific language governing permissions and limitations
 # under the License.
 #
+from typing import TYPE_CHECKING, Any, Sequence
+
 from airflow.models import BaseOperator
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
-from airflow.utils.decorators import apply_defaults
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class WasbDeleteBlobOperator(BaseOperator):
@@ -27,29 +30,29 @@ class WasbDeleteBlobOperator(BaseOperator):
     Deletes blob(s) on Azure Blob Storage.
 
     :param container_name: Name of the container. (templated)
-    :type container_name: str
     :param blob_name: Name of the blob. (templated)
-    :type blob_name: str
-    :param wasb_conn_id: Reference to the wasb connection.
-    :type wasb_conn_id: str
+    :param wasb_conn_id: Reference to the :ref:`wasb connection <howto/connection:wasb>`.
     :param check_options: Optional keyword arguments that
         `WasbHook.check_for_blob()` takes.
     :param is_prefix: If blob_name is a prefix, delete all files matching prefix.
-    :type is_prefix: bool
     :param ignore_if_missing: if True, then return success even if the
         blob does not exist.
-    :type ignore_if_missing: bool
     """
 
-    template_fields = ('container_name', 'blob_name')
+    template_fields: Sequence[str] = ('container_name', 'blob_name')
 
-    @apply_defaults
-    def __init__(self, container_name, blob_name,
-                 wasb_conn_id='wasb_default', check_options=None,
-                 is_prefix=False, ignore_if_missing=False,
-                 *args,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        *,
+        container_name: str,
+        blob_name: str,
+        wasb_conn_id: str = 'wasb_default',
+        check_options: Any = None,
+        is_prefix: bool = False,
+        ignore_if_missing: bool = False,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
         if check_options is None:
             check_options = {}
         self.wasb_conn_id = wasb_conn_id
@@ -59,12 +62,10 @@ class WasbDeleteBlobOperator(BaseOperator):
         self.is_prefix = is_prefix
         self.ignore_if_missing = ignore_if_missing
 
-    def execute(self, context):
-        self.log.info(
-            'Deleting blob: %s\nin wasb://%s', self.blob_name, self.container_name
-        )
+    def execute(self, context: "Context") -> None:
+        self.log.info('Deleting blob: %s\n in wasb://%s', self.blob_name, self.container_name)
         hook = WasbHook(wasb_conn_id=self.wasb_conn_id)
 
-        hook.delete_file(self.container_name, self.blob_name,
-                         self.is_prefix, self.ignore_if_missing,
-                         **self.check_options)
+        hook.delete_file(
+            self.container_name, self.blob_name, self.is_prefix, self.ignore_if_missing, **self.check_options
+        )

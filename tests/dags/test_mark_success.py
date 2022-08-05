@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -31,8 +30,4 @@ args = {
 
 
 dag = DAG(dag_id='test_mark_success', default_args=args)
-task = PythonOperator(
-    task_id='task1',
-    python_callable=lambda x: sleep(x),  # pylint: disable=W0108
-    op_args=[600],
-    dag=dag)
+task = PythonOperator(task_id='task1', python_callable=lambda x: sleep(x), op_args=[600], dag=dag)

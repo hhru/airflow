@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,33 +15,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""This module is deprecated. Please use `airflow.providers.amazon.aws.operators.ecs`."""
+"""This module is deprecated. Please use :mod:`airflow.providers.amazon.aws.operators.ecs`."""
 
 import warnings
 
-# pylint: disable=unused-import
-from typing_extensions import Protocol, runtime_checkable
+from airflow.providers.amazon.aws.operators.ecs import ECSOperator, ECSProtocol
 
-from airflow.providers.amazon.aws.operators.ecs import ECSOperator, ECSProtocol as NewECSProtocol  # noqa
+__all__ = ["ECSOperator", "ECSProtocol"]
 
 warnings.warn(
     "This module is deprecated. Please use `airflow.providers.amazon.aws.operators.ecs`.",
-    DeprecationWarning, stacklevel=2
+    DeprecationWarning,
+    stacklevel=2,
 )
-
-
-@runtime_checkable
-class ECSProtocol(NewECSProtocol, Protocol):
-    """
-    This class is deprecated. Please use `airflow.providers.amazon.aws.operators.ecs.ECSProtocol`.
-    """
-
-    # A Protocol cannot be instantiated
-
-    def __new__(cls, *args, **kwargs):
-        warnings.warn(
-            """This class is deprecated.
-            Please use `airflow.providers.amazon.aws.operators.ecs.ECSProtocol`.""",
-            DeprecationWarning,
-            stacklevel=2,
-        )

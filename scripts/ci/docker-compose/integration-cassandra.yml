@@ -15,15 +15,32 @@
 # specific language governing permissions and limitations
 # under the License.
 ---
-version: "2.2"
+version: "3.7"
 services:
   cassandra:
-    init: true
-    image: cassandra:3.0
+    # TODO: fix cassandra to 3.0.25 as latest 3.0 (3.0.26) does not start cleanly
+    image: cassandra:3.0.25
+    environment:
+      HEAP_NEWSIZE: 128M
+      MAX_HEAP_SIZE: 256M
     volumes:
       - /dev/urandom:/dev/random   # Required to get non-blocking entropy source
-  airflow-testing:
+      - cassandra-db-volume:/var/lib/cassandra
+    healthcheck:
+      # We use IPv6 variant of the check to workaround the problem with 3.0.26 version
+      # of Cassandra https://issues.apache.org/jira/browse/CASSANDRA-17581
+      test: "[ $$(nodetool --host '::FFFF:127.0.0.1' statusgossip) = running ]"
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: always
+
+  airflow:
     environment:
       - INTEGRATION_CASSANDRA=true
     depends_on:
-      - cassandra
+      cassandra:
+        condition: service_healthy
+
+volumes:
+  cassandra-db-volume:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -21,19 +20,18 @@
 
 import datetime as dt
 
-from airflow.models import DAG
-from airflow.operators.dummy_operator import DummyOperator
-from airflow.operators.latest_only_operator import LatestOnlyOperator
-from airflow.utils.dates import days_ago
+from airflow import DAG
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.latest_only import LatestOnlyOperator
 
-dag = DAG(
+with DAG(
     dag_id='latest_only',
     schedule_interval=dt.timedelta(hours=4),
-    start_date=days_ago(2),
-    tags=['example']
-)
+    start_date=dt.datetime(2021, 1, 1),
+    catchup=False,
+    tags=['example2', 'example3'],
+) as dag:
+    latest_only = LatestOnlyOperator(task_id='latest_only')
+    task1 = EmptyOperator(task_id='task1')
 
-latest_only = LatestOnlyOperator(task_id='latest_only', dag=dag)
-task1 = DummyOperator(task_id='task1', dag=dag)
-
-latest_only >> task1
+    latest_only >> task1

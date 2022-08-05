@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -19,8 +18,10 @@
 
 import unittest
 
+import pytest
+
 from airflow.exceptions import AirflowException
-from airflow.providers.amazon.aws.sensors.sagemaker_base import SageMakerBaseSensor
+from airflow.providers.amazon.aws.sensors.sagemaker import SageMakerBaseSensor
 
 
 class TestSagemakerBaseSensor(unittest.TestCase):
@@ -33,19 +34,12 @@ class TestSagemakerBaseSensor(unittest.TestCase):
                 return ['FAILED']
 
             def get_sagemaker_response(self):
-                return {
-                    'SomeKey': {'State': 'COMPLETED'},
-                    'ResponseMetadata': {'HTTPStatusCode': 200}
-                }
+                return {'SomeKey': {'State': 'COMPLETED'}, 'ResponseMetadata': {'HTTPStatusCode': 200}}
 
             def state_from_response(self, response):
                 return response['SomeKey']['State']
 
-        sensor = SageMakerBaseSensorSubclass(
-            task_id='test_task',
-            poke_interval=2,
-            aws_conn_id='aws_test'
-        )
+        sensor = SageMakerBaseSensorSubclass(task_id='test_task', poke_interval=2, aws_conn_id='aws_test')
 
         sensor.execute(None)
 
@@ -58,21 +52,14 @@ class TestSagemakerBaseSensor(unittest.TestCase):
                 return ['FAILED']
 
             def get_sagemaker_response(self):
-                return {
-                    'SomeKey': {'State': 'PENDING'},
-                    'ResponseMetadata': {'HTTPStatusCode': 200}
-                }
+                return {'SomeKey': {'State': 'PENDING'}, 'ResponseMetadata': {'HTTPStatusCode': 200}}
 
             def state_from_response(self, response):
                 return response['SomeKey']['State']
 
-        sensor = SageMakerBaseSensorSubclass(
-            task_id='test_task',
-            poke_interval=2,
-            aws_conn_id='aws_test'
-        )
+        sensor = SageMakerBaseSensorSubclass(task_id='test_task', poke_interval=2, aws_conn_id='aws_test')
 
-        self.assertEqual(sensor.poke(None), False)
+        assert sensor.poke(None) is False
 
     def test_poke_with_not_implemented_method(self):
         class SageMakerBaseSensorSubclass(SageMakerBaseSensor):
@@ -82,13 +69,10 @@ class TestSagemakerBaseSensor(unittest.TestCase):
             def failed_states(self):
                 return ['FAILED']
 
-        sensor = SageMakerBaseSensorSubclass(
-            task_id='test_task',
-            poke_interval=2,
-            aws_conn_id='aws_test'
-        )
+        sensor = SageMakerBaseSensorSubclass(task_id='test_task', poke_interval=2, aws_conn_id='aws_test')
 
-        self.assertRaises(NotImplementedError, sensor.poke, None)
+        with pytest.raises(NotImplementedError):
+            sensor.poke(None)
 
     def test_poke_with_bad_response(self):
         class SageMakerBaseSensorSubclass(SageMakerBaseSensor):
@@ -99,21 +83,14 @@ class TestSagemakerBaseSensor(unittest.TestCase):
                 return ['FAILED']
 
             def get_sagemaker_response(self):
-                return {
-                    'SomeKey': {'State': 'COMPLETED'},
-                    'ResponseMetadata': {'HTTPStatusCode': 400}
-                }
+                return {'SomeKey': {'State': 'COMPLETED'}, 'ResponseMetadata': {'HTTPStatusCode': 400}}
 
             def state_from_response(self, response):
                 return response['SomeKey']['State']
 
-        sensor = SageMakerBaseSensorSubclass(
-            task_id='test_task',
-            poke_interval=2,
-            aws_conn_id='aws_test'
-        )
+        sensor = SageMakerBaseSensorSubclass(task_id='test_task', poke_interval=2, aws_conn_id='aws_test')
 
-        self.assertEqual(sensor.poke(None), False)
+        assert sensor.poke(None) is False
 
     def test_poke_with_job_failure(self):
         class SageMakerBaseSensorSubclass(SageMakerBaseSensor):
@@ -124,22 +101,12 @@ class TestSagemakerBaseSensor(unittest.TestCase):
                 return ['FAILED']
 
             def get_sagemaker_response(self):
-                return {
-                    'SomeKey': {'State': 'FAILED'},
-                    'ResponseMetadata': {'HTTPStatusCode': 200}
-                }
+                return {'SomeKey': {'State': 'FAILED'}, 'ResponseMetadata': {'HTTPStatusCode': 200}}
 
             def state_from_response(self, response):
                 return response['SomeKey']['State']
 
-        sensor = SageMakerBaseSensorSubclass(
-            task_id='test_task',
-            poke_interval=2,
-            aws_conn_id='aws_test'
-        )
+        sensor = SageMakerBaseSensorSubclass(task_id='test_task', poke_interval=2, aws_conn_id='aws_test')
 
-        self.assertRaises(AirflowException, sensor.poke, None)
-
-
-if __name__ == '__main__':
-    unittest.main()
+        with pytest.raises(AirflowException):
+            sensor.poke(None)

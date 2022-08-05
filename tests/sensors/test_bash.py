@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -21,17 +20,16 @@
 import datetime
 import unittest
 
-from airflow import DAG
+import pytest
+
 from airflow.exceptions import AirflowSensorTimeout
+from airflow.models.dag import DAG
 from airflow.sensors.bash import BashSensor
 
 
 class TestBashSensor(unittest.TestCase):
     def setUp(self):
-        args = {
-            'owner': 'airflow',
-            'start_date': datetime.datetime(2017, 1, 1)
-        }
+        args = {'owner': 'airflow', 'start_date': datetime.datetime(2017, 1, 1)}
         dag = DAG('test_dag_id', default_args=args)
         self.dag = dag
 
@@ -42,7 +40,7 @@ class TestBashSensor(unittest.TestCase):
             output_encoding='utf-8',
             poke_interval=1,
             timeout=2,
-            dag=self.dag
+            dag=self.dag,
         )
         op.execute(None)
 
@@ -53,7 +51,7 @@ class TestBashSensor(unittest.TestCase):
             output_encoding='utf-8',
             poke_interval=1,
             timeout=2,
-            dag=self.dag
+            dag=self.dag,
         )
-        with self.assertRaises(AirflowSensorTimeout):
+        with pytest.raises(AirflowSensorTimeout):
             op.execute(None)

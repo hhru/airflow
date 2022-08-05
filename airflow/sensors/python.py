@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,11 +15,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
-from airflow.operators.python import PythonOperator
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.base import BaseSensorOperator
+from airflow.utils.context import Context, context_merge
+from airflow.utils.operator_helpers import determine_kwargs
 
 
 class PythonSensor(BaseSensorOperator):
@@ -33,40 +32,36 @@ class PythonSensor(BaseSensorOperator):
     in the callable
 
     :param python_callable: A reference to an object that is callable
-    :type python_callable: python callable
     :param op_kwargs: a dictionary of keyword arguments that will get unpacked
         in your function
-    :type op_kwargs: dict
     :param op_args: a list of positional arguments that will get unpacked when
         calling your callable
-    :type op_args: list
     :param templates_dict: a dictionary where the values are templates that
         will get templated by the Airflow engine sometime between
         ``__init__`` and ``execute`` takes place and are made available
         in your callable's context after the template has been applied.
-    :type templates_dict: dict of str
     """
 
-    template_fields = ('templates_dict', 'op_args', 'op_kwargs')
+    template_fields: Sequence[str] = ('templates_dict', 'op_args', 'op_kwargs')
 
-    @apply_defaults
     def __init__(
-            self,
-            python_callable: Callable,
-            op_args: Optional[List] = None,
-            op_kwargs: Optional[Dict] = None,
-            templates_dict: Optional[Dict] = None,
-            *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        self,
+        *,
+        python_callable: Callable,
+        op_args: Optional[List] = None,
+        op_kwargs: Optional[Mapping[str, Any]] = None,
+        templates_dict: Optional[Dict] = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
         self.python_callable = python_callable
         self.op_args = op_args or []
         self.op_kwargs = op_kwargs or {}
         self.templates_dict = templates_dict
 
-    def poke(self, context: Dict):
-        context.update(self.op_kwargs)
-        context['templates_dict'] = self.templates_dict
-        self.op_kwargs = PythonOperator.determine_op_kwargs(self.python_callable, context, len(self.op_args))
+    def poke(self, context: Context) -> bool:
+        context_merge(context, self.op_kwargs, templates_dict=self.templates_dict)
+        self.op_kwargs = determine_kwargs(self.python_callable, self.op_args, context)
 
         self.log.info("Poking callable: %s", str(self.python_callable))
         return_value = self.python_callable(*self.op_args, **self.op_kwargs)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -20,23 +19,23 @@
 import unittest
 
 from airflow.models import Connection
-from airflow.providers.microsoft.azure.hooks.azure_container_registry import AzureContainerRegistryHook
+from airflow.providers.microsoft.azure.hooks.container_registry import AzureContainerRegistryHook
 from airflow.utils import db
 
 
 class TestAzureContainerRegistryHook(unittest.TestCase):
-
     def test_get_conn(self):
         db.merge_conn(
             Connection(
                 conn_id='azure_container_registry',
+                conn_type='azure_container_registry',
                 login='myuser',
                 password='password',
                 host='test.cr',
             )
         )
         hook = AzureContainerRegistryHook(conn_id='azure_container_registry')
-        self.assertIsNotNone(hook.connection)
-        self.assertEqual(hook.connection.username, 'myuser')
-        self.assertEqual(hook.connection.password, 'password')
-        self.assertEqual(hook.connection.server, 'test.cr')
+        assert hook.connection is not None
+        assert hook.connection.username == 'myuser'
+        assert hook.connection.password == 'password'
+        assert hook.connection.server == 'test.cr'

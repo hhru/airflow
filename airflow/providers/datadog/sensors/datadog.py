@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,12 +15,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
 from datadog import api
 
 from airflow.exceptions import AirflowException
 from airflow.providers.datadog.hooks.datadog import DatadogHook
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.base import BaseSensorOperator
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class DatadogSensor(BaseSensorOperator):
@@ -33,23 +36,34 @@ class DatadogSensor(BaseSensorOperator):
     Airflow runs.
 
     :param datadog_conn_id: The connection to datadog, containing metadata for api keys.
-    :param datadog_conn_id: str
+    :param from_seconds_ago: POSIX timestamp start (default 3600).
+    :param up_to_seconds_from_now: POSIX timestamp end (default 0).
+    :param priority: Priority of your events, either low or normal.
+    :param sources: A comma separated list indicating what tags, if any,
+        should be used to filter the list of monitors by scope
+    :param tags: Get datadog events from specific sources.
+    :param response_check: A check against the ‘requests’ response object. The callable takes
+        the response object as the first positional argument and optionally any number of
+        keyword arguments available in the context dictionary. It should return True for
+        ‘pass’ and False otherwise.
+    :param response_check: Optional[Callable[[Dict[str, Any]], bool]]
     """
+
     ui_color = '#66c3dd'
 
-    @apply_defaults
     def __init__(
-            self,
-            datadog_conn_id='datadog_default',
-            from_seconds_ago=3600,
-            up_to_seconds_from_now=0,
-            priority=None,
-            sources=None,
-            tags=None,
-            response_check=None,
-            *args,
-            **kwargs):
-        super().__init__(*args, **kwargs)
+        self,
+        *,
+        datadog_conn_id: str = 'datadog_default',
+        from_seconds_ago: int = 3600,
+        up_to_seconds_from_now: int = 0,
+        priority: Optional[str] = None,
+        sources: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        response_check: Optional[Callable[[Dict[str, Any]], bool]] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
         self.datadog_conn_id = datadog_conn_id
         self.from_seconds_ago = from_seconds_ago
         self.up_to_seconds_from_now = up_to_seconds_from_now
@@ -58,7 +72,7 @@ class DatadogSensor(BaseSensorOperator):
         self.tags = tags
         self.response_check = response_check
 
-    def poke(self, context):
+    def poke(self, context: 'Context') -> bool:
         # This instantiates the hook, but doesn't need it further,
         # because the API authenticates globally (unfortunately),
         # but for airflow this shouldn't matter too much, because each
@@ -70,7 +84,8 @@ class DatadogSensor(BaseSensorOperator):
             end=self.up_to_seconds_from_now,
             priority=self.priority,
             sources=self.sources,
-            tags=self.tags)
+            tags=self.tags,
+        )
 
         if isinstance(response, dict) and response.get('status', 'ok') != 'ok':
             self.log.error("Unexpected Datadog result: %s", response)

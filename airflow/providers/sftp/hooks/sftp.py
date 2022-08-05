@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,14 +15,15 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-This module contains SFTP hook.
-"""
+"""This module contains SFTP hook."""
 import datetime
 import stat
-from typing import Dict, List, Optional, Tuple
+import warnings
+from typing import Any, Dict, List, Optional, Tuple
 
 import pysftp
+import tenacity
+from paramiko import SSHException
 
 from airflow.providers.ssh.hooks.ssh import SSHHook
 
@@ -33,7 +33,7 @@ class SFTPHook(SSHHook):
     This hook is inherited from SSH hook. Please refer to SSH hook for the input
     arguments.
 
-    Interact with SFTP. Aims to be interchangeable with FTPHook.
+    Interact with SFTP.
 
     :Pitfalls::
 
@@ -46,14 +46,49 @@ class SFTPHook(SSHHook):
           permissions.
 
     Errors that may occur throughout but should be handled downstream.
+
+    For consistency reasons with SSHHook, the preferred parameter is "ssh_conn_id".
+    Please note that it is still possible to use the parameter "ftp_conn_id"
+    to initialize the hook, but it will be removed in future Airflow versions.
+
+    :param ssh_conn_id: The :ref:`sftp connection id<howto/connection:sftp>`
+    :param ftp_conn_id (Outdated): The :ref:`sftp connection id<howto/connection:sftp>`
     """
 
-    def __init__(self, ftp_conn_id: str = 'sftp_default', *args, **kwargs) -> None:
-        kwargs['ssh_conn_id'] = ftp_conn_id
+    conn_name_attr = 'ssh_conn_id'
+    default_conn_name = 'sftp_default'
+    conn_type = 'sftp'
+    hook_name = 'SFTP'
+
+    @staticmethod
+    def get_ui_field_behaviour() -> Dict[str, Any]:
+        return {
+            "hidden_fields": ['schema'],
+            "relabeling": {
+                'login': 'Username',
+            },
+        }
+
+    def __init__(
+        self,
+        ssh_conn_id: Optional[str] = 'sftp_default',
+        *args,
+        **kwargs,
+    ) -> None:
+        ftp_conn_id = kwargs.pop('ftp_conn_id', None)
+        if ftp_conn_id:
+            warnings.warn(
+                'Parameter `ftp_conn_id` is deprecated. Please use `ssh_conn_id` instead.',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            ssh_conn_id = ftp_conn_id
+        kwargs['ssh_conn_id'] = ssh_conn_id
         super().__init__(*args, **kwargs)
 
         self.conn = None
         self.private_key_pass = None
+        self.ciphers = None
 
         # Fail for unverified hosts, unless this is explicitly allowed
         self.no_host_key_check = False
@@ -62,56 +97,72 @@ class SFTPHook(SSHHook):
             conn = self.get_connection(self.ssh_conn_id)
             if conn.extra is not None:
                 extra_options = conn.extra_dejson
-                if 'private_key_pass' in extra_options:
-                    self.private_key_pass = extra_options.get('private_key_pass', None)
 
                 # For backward compatibility
-                # TODO: remove in Airflow 2.1
-                import warnings
+                # TODO: remove in the next major provider release.
+
+                if 'private_key_pass' in extra_options:
+                    warnings.warn(
+                        'Extra option `private_key_pass` is deprecated.'
+                        'Please use `private_key_passphrase` instead.'
+                        '`private_key_passphrase` will precede if both options are specified.'
+                        'The old option `private_key_pass` will be removed in a future release.',
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                self.private_key_pass = extra_options.get(
+                    'private_key_passphrase', extra_options.get('private_key_pass')
+                )
+
                 if 'ignore_hostkey_verification' in extra_options:
                     warnings.warn(
                         'Extra option `ignore_hostkey_verification` is deprecated.'
                         'Please use `no_host_key_check` instead.'
-                        'This option will be removed in Airflow 2.1',
+                        'This option will be removed in a future release.',
                         DeprecationWarning,
                         stacklevel=2,
                     )
-                    self.no_host_key_check = str(
-                        extra_options['ignore_hostkey_verification']
-                    ).lower() == 'true'
+                    self.no_host_key_check = (
+                        str(extra_options['ignore_hostkey_verification']).lower() == 'true'
+                    )
 
                 if 'no_host_key_check' in extra_options:
-                    self.no_host_key_check = str(
-                        extra_options['no_host_key_check']).lower() == 'true'
+                    self.no_host_key_check = str(extra_options['no_host_key_check']).lower() == 'true'
 
-                if 'private_key' in extra_options:
-                    warnings.warn(
-                        'Extra option `private_key` is deprecated.'
-                        'Please use `key_file` instead.'
-                        'This option will be removed in Airflow 2.1',
-                        DeprecationWarning,
-                        stacklevel=2,
-                    )
-                    self.key_file = extra_options.get('private_key')
+                if 'ciphers' in extra_options:
+                    self.ciphers = extra_options['ciphers']
 
+    @tenacity.retry(
+        stop=tenacity.stop_after_delay(10),
+        wait=tenacity.wait_exponential(multiplier=1, max=10),
+        retry=tenacity.retry_if_exception_type(SSHException),
+        reraise=True,
+    )
     def get_conn(self) -> pysftp.Connection:
-        """
-        Returns an SFTP connection object
-        """
+        """Returns an SFTP connection object"""
         if self.conn is None:
             cnopts = pysftp.CnOpts()
             if self.no_host_key_check:
                 cnopts.hostkeys = None
+            else:
+                if self.host_key is not None:
+                    cnopts.hostkeys.add(self.remote_host, self.host_key.get_name(), self.host_key)
+                else:
+                    pass  # will fallback to system host keys if none explicitly specified in conn extra
+
             cnopts.compression = self.compress
+            cnopts.ciphers = self.ciphers
             conn_params = {
                 'host': self.remote_host,
                 'port': self.port,
                 'username': self.username,
-                'cnopts': cnopts
+                'cnopts': cnopts,
             }
             if self.password and self.password.strip():
                 conn_params['password'] = self.password
-            if self.key_file:
+            if self.pkey:
+                conn_params['private_key'] = self.pkey
+            elif self.key_file:
                 conn_params['private_key'] = self.key_file
             if self.private_key_pass:
                 conn_params['private_key_pass'] = self.private_key_pass
@@ -120,13 +171,10 @@ class SFTPHook(SSHHook):
         return self.conn
 
     def close_conn(self) -> None:
-        """
-        Closes the connection. An error will occur if the
-        connection wasnt ever opened.
-        """
-        conn = self.conn
-        conn.close()  # type: ignore
-        self.conn = None
+        """Closes the connection"""
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
 
     def describe_directory(self, path: str) -> Dict[str, Dict[str, str]]:
         """
@@ -134,18 +182,17 @@ class SFTPHook(SSHHook):
         on the remote system (where the MLSD command is supported).
 
         :param path: full path to the remote directory
-        :type path: str
         """
         conn = self.get_conn()
         flist = conn.listdir_attr(path)
         files = {}
         for f in flist:
-            modify = datetime.datetime.fromtimestamp(
-                f.st_mtime).strftime('%Y%m%d%H%M%S')
+            modify = datetime.datetime.fromtimestamp(f.st_mtime).strftime('%Y%m%d%H%M%S')
             files[f.filename] = {
                 'size': f.st_size,
                 'type': 'dir' if stat.S_ISDIR(f.st_mode) else 'file',
-                'modify': modify}
+                'modify': modify,
+            }
         return files
 
     def list_directory(self, path: str) -> List[str]:
@@ -153,7 +200,6 @@ class SFTPHook(SSHHook):
         Returns a list of files on the remote system.
 
         :param path: full path to the remote directory to list
-        :type path: str
         """
         conn = self.get_conn()
         files = conn.listdir(path)
@@ -164,7 +210,6 @@ class SFTPHook(SSHHook):
         Creates a directory on the remote system.
 
         :param path: full path to the remote directory to create
-        :type path: str
         :param mode: int representation of octal mode for directory
         """
         conn = self.get_conn()
@@ -175,7 +220,6 @@ class SFTPHook(SSHHook):
         Deletes a directory on the remote system.
 
         :param path: full path to the remote directory to delete
-        :type path: str
         """
         conn = self.get_conn()
         conn.rmdir(path)
@@ -187,14 +231,10 @@ class SFTPHook(SSHHook):
         at that location
 
         :param remote_full_path: full path to the remote file
-        :type remote_full_path: str
         :param local_full_path: full path to the local file
-        :type local_full_path: str
         """
         conn = self.get_conn()
-        self.log.info('Retrieving file from FTP: %s', remote_full_path)
         conn.get(remote_full_path, local_full_path)
-        self.log.info('Finished retrieving file from FTP: %s', remote_full_path)
 
     def store_file(self, remote_full_path: str, local_full_path: str) -> None:
         """
@@ -203,9 +243,7 @@ class SFTPHook(SSHHook):
         from that location
 
         :param remote_full_path: full path to the remote file
-        :type remote_full_path: str
         :param local_full_path: full path to the local file
-        :type local_full_path: str
         """
         conn = self.get_conn()
         conn.put(local_full_path, remote_full_path)
@@ -215,7 +253,6 @@ class SFTPHook(SSHHook):
         Removes a file on the FTP Server
 
         :param path: full path to the remote file
-        :type path: str
         """
         conn = self.get_conn()
         conn.remove(path)
@@ -225,7 +262,6 @@ class SFTPHook(SSHHook):
         Returns modification time.
 
         :param path: full path to the remote file
-        :type path: str
         """
         conn = self.get_conn()
         ftp_mdtm = conn.stat(path).st_mtime
@@ -236,7 +272,6 @@ class SFTPHook(SSHHook):
         Returns True if a remote entity exists
 
         :param path: full path to the remote file or directory
-        :type path: str
         """
         conn = self.get_conn()
         return conn.exists(path)
@@ -247,11 +282,8 @@ class SFTPHook(SSHHook):
         Return True if given path starts with prefix (if set) and ends with delimiter (if set).
 
         :param path: path to be checked
-        :type path: str
         :param prefix: if set path will be checked is starting with prefix
-        :type prefix: str
         :param delimiter: if set path will be checked is ending with suffix
-        :type delimiter: str
         :return: bool
         """
         if prefix is not None and not path.startswith(prefix):
@@ -268,11 +300,8 @@ class SFTPHook(SSHHook):
         It is possible to filter results by giving prefix and/or delimiter parameters.
 
         :param path: path from which tree will be built
-        :type path: str
         :param prefix: if set paths will be added if start with prefix
-        :type prefix: str
         :param delimiter: if set paths will be added if end with delimiter
-        :type delimiter: str
         :return: tuple with list of files, dirs and unknown items
         :rtype: Tuple[List[str], List[str], List[str]]
         """
@@ -280,11 +309,7 @@ class SFTPHook(SSHHook):
         files, dirs, unknowns = [], [], []  # type: List[str], List[str], List[str]
 
         def append_matching_path_callback(list_):
-            return (
-                lambda item: list_.append(item)
-                if self._is_path_match(item, prefix, delimiter)
-                else None
-            )
+            return lambda item: list_.append(item) if self._is_path_match(item, prefix, delimiter) else None
 
         conn.walktree(
             remotepath=path,
@@ -295,3 +320,12 @@ class SFTPHook(SSHHook):
         )
 
         return files, dirs, unknowns
+
+    def test_connection(self) -> Tuple[bool, str]:
+        """Test the SFTP connection by calling path with directory"""
+        try:
+            conn = self.get_conn()
+            conn.pwd
+            return True, "Connection successfully tested"
+        except Exception as e:
+            return False, str(e)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,14 +15,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-This module contains SFTP sensor.
-"""
-from paramiko import SFTP_NO_SUCH_FILE
+"""This module contains SFTP sensor."""
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional, Sequence
+
+from paramiko.sftp import SFTP_NO_SUCH_FILE
 
 from airflow.providers.sftp.hooks.sftp import SFTPHook
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.base import BaseSensorOperator
+from airflow.utils.timezone import convert_to_utc
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class SFTPSensor(BaseSensorOperator):
@@ -31,27 +34,43 @@ class SFTPSensor(BaseSensorOperator):
     Waits for a file or directory to be present on SFTP.
 
     :param path: Remote file or directory path
-    :type path: str
     :param sftp_conn_id: The connection to run the sensor against
-    :type sftp_conn_id: str
+    :param newer_than: DateTime for which the file or file path should be newer than, comparison is inclusive
     """
-    template_fields = ('path',)
 
-    @apply_defaults
-    def __init__(self, path, sftp_conn_id='sftp_default', *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    template_fields: Sequence[str] = (
+        'path',
+        'newer_than',
+    )
+
+    def __init__(
+        self,
+        *,
+        path: str,
+        newer_than: Optional[datetime] = None,
+        sftp_conn_id: str = 'sftp_default',
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
         self.path = path
-        self.hook = None
+        self.hook: Optional[SFTPHook] = None
         self.sftp_conn_id = sftp_conn_id
+        self.newer_than: Optional[datetime] = newer_than
 
-    def poke(self, context):
+    def poke(self, context: 'Context') -> bool:
         self.hook = SFTPHook(self.sftp_conn_id)
         self.log.info('Poking for %s', self.path)
         try:
-            self.hook.get_mod_time(self.path)
+            mod_time = self.hook.get_mod_time(self.path)
+            self.log.info('Found File %s last modified: %s', str(self.path), str(mod_time))
         except OSError as e:
             if e.errno != SFTP_NO_SUCH_FILE:
                 raise e
             return False
         self.hook.close_conn()
-        return True
+        if self.newer_than:
+            _mod_time = convert_to_utc(datetime.strptime(mod_time, '%Y%m%d%H%M%S'))
+            _newer_than = convert_to_utc(self.newer_than)
+            return _newer_than <= _mod_time
+        else:
+            return True

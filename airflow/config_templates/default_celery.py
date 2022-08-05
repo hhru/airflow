@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,24 +16,22 @@
 # specific language governing permissions and limitations
 # under the License.
 """Default celery configuration."""
+import logging
 import ssl
 
 from airflow.configuration import conf
 from airflow.exceptions import AirflowConfigException, AirflowException
-from airflow.utils.log.logging_mixin import LoggingMixin
 
 
 def _broker_supports_visibility_timeout(url):
     return url.startswith("redis://") or url.startswith("sqs://")
 
 
-log = LoggingMixin().log
+log = logging.getLogger(__name__)
 
 broker_url = conf.get('celery', 'BROKER_URL')
 
-broker_transport_options = conf.getsection(
-    'celery_broker_transport_options'
-)
+broker_transport_options = conf.getsection('celery_broker_transport_options') or {}
 if 'visibility_timeout' not in broker_transport_options:
     if _broker_supports_visibility_timeout(broker_url):
         broker_transport_options['visibility_timeout'] = 21600
@@ -42,14 +39,16 @@ if 'visibility_timeout' not in broker_transport_options:
 DEFAULT_CELERY_CONFIG = {
     'accept_content': ['json'],
     'event_serializer': 'json',
-    'worker_prefetch_multiplier': 1,
+    'worker_prefetch_multiplier': conf.getint('celery', 'worker_prefetch_multiplier'),
     'task_acks_late': True,
-    'task_default_queue': conf.get('celery', 'DEFAULT_QUEUE'),
-    'task_default_exchange': conf.get('celery', 'DEFAULT_QUEUE'),
+    'task_default_queue': conf.get('operators', 'DEFAULT_QUEUE'),
+    'task_default_exchange': conf.get('operators', 'DEFAULT_QUEUE'),
+    'task_track_started': conf.getboolean('celery', 'task_track_started'),
     'broker_url': broker_url,
     'broker_transport_options': broker_transport_options,
     'result_backend': conf.get('celery', 'RESULT_BACKEND'),
     'worker_concurrency': conf.getint('celery', 'WORKER_CONCURRENCY'),
+    'worker_enable_remote_control': conf.getboolean('celery', 'worker_enable_remote_control'),
 }
 
 celery_ssl_active = False
@@ -60,31 +59,43 @@ except AirflowConfigException:
 
 try:
     if celery_ssl_active:
-        if 'amqp://' in broker_url:
-            broker_use_ssl = {'keyfile': conf.get('celery', 'SSL_KEY'),
-                              'certfile': conf.get('celery', 'SSL_CERT'),
-                              'ca_certs': conf.get('celery', 'SSL_CACERT'),
-                              'cert_reqs': ssl.CERT_REQUIRED}
-        elif 'redis://' in broker_url:
-            broker_use_ssl = {'ssl_keyfile': conf.get('celery', 'SSL_KEY'),
-                              'ssl_certfile': conf.get('celery', 'SSL_CERT'),
-                              'ssl_ca_certs': conf.get('celery', 'SSL_CACERT'),
-                              'ssl_cert_reqs': ssl.CERT_REQUIRED}
+        if broker_url and 'amqp://' in broker_url:
+            broker_use_ssl = {
+                'keyfile': conf.get('celery', 'SSL_KEY'),
+                'certfile': conf.get('celery', 'SSL_CERT'),
+                'ca_certs': conf.get('celery', 'SSL_CACERT'),
+                'cert_reqs': ssl.CERT_REQUIRED,
+            }
+        elif broker_url and 'redis://' in broker_url:
+            broker_use_ssl = {
+                'ssl_keyfile': conf.get('celery', 'SSL_KEY'),
+                'ssl_certfile': conf.get('celery', 'SSL_CERT'),
+                'ssl_ca_certs': conf.get('celery', 'SSL_CACERT'),
+                'ssl_cert_reqs': ssl.CERT_REQUIRED,
+            }
         else:
-            raise AirflowException('The broker you configured does not support SSL_ACTIVE to be True. '
-                                   'Please use RabbitMQ or Redis if you would like to use SSL for broker.')
+            raise AirflowException(
+                'The broker you configured does not support SSL_ACTIVE to be True. '
+                'Please use RabbitMQ or Redis if you would like to use SSL for broker.'
+            )
 
         DEFAULT_CELERY_CONFIG['broker_use_ssl'] = broker_use_ssl
 except AirflowConfigException:
-    raise AirflowException('AirflowConfigException: SSL_ACTIVE is True, '
-                           'please ensure SSL_KEY, '
-                           'SSL_CERT and SSL_CACERT are set')
+    raise AirflowException(
+        'AirflowConfigException: SSL_ACTIVE is True, '
+        'please ensure SSL_KEY, '
+        'SSL_CERT and SSL_CACERT are set'
+    )
 except Exception as e:
-    raise AirflowException('Exception: There was an unknown Celery SSL Error. '
-                           'Please ensure you want to use '
-                           'SSL and/or have all necessary certs and key ({}).'.format(e))
+    raise AirflowException(
+        f'Exception: There was an unknown Celery SSL Error. Please ensure you want to use SSL and/or have '
+        f'all necessary certs and key ({e}).'
+    )
 
-result_backend = DEFAULT_CELERY_CONFIG['result_backend']
+result_backend = str(DEFAULT_CELERY_CONFIG['result_backend'])
 if 'amqp://' in result_backend or 'redis://' in result_backend or 'rpc://' in result_backend:
-    log.warning("You have configured a result_backend of %s, it is highly recommended "
-                "to use an alternative result_backend (i.e. a database).", result_backend)
+    log.warning(
+        "You have configured a result_backend of %s, it is highly recommended "
+        "to use an alternative result_backend (i.e. a database).",
+        result_backend,
+    )

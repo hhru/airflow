@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -19,11 +18,11 @@
 
 
 import unittest
+from unittest.mock import MagicMock
 
 import pytest
-from mock import MagicMock
 
-from airflow import DAG
+from airflow.models.dag import DAG
 from airflow.providers.redis.hooks.redis import RedisHook
 from airflow.providers.redis.operators.redis_publish import RedisPublishOperator
 from airflow.utils import timezone
@@ -33,12 +32,8 @@ DEFAULT_DATE = timezone.datetime(2017, 1, 1)
 
 @pytest.mark.integration("redis")
 class TestRedisPublishOperator(unittest.TestCase):
-
     def setUp(self):
-        args = {
-            'owner': 'airflow',
-            'start_date': DEFAULT_DATE
-        }
+        args = {'owner': 'airflow', 'start_date': DEFAULT_DATE}
 
         self.dag = DAG('test_redis_dag_id', default_args=args)
 
@@ -51,7 +46,7 @@ class TestRedisPublishOperator(unittest.TestCase):
             dag=self.dag,
             message='hello',
             channel=self.channel,
-            redis_conn_id='redis_default'
+            redis_conn_id='redis_default',
         )
 
         hook = RedisHook(redis_conn_id='redis_default')
@@ -60,13 +55,13 @@ class TestRedisPublishOperator(unittest.TestCase):
 
         operator.execute(self.mock_context)
         context_calls = []
-        self.assertTrue(self.mock_context['ti'].method_calls == context_calls, "context calls should be same")
+        assert self.mock_context['ti'].method_calls == context_calls, "context calls should be same"
 
         message = pubsub.get_message()
-        self.assertEqual(message['type'], 'subscribe')
+        assert message['type'] == 'subscribe'
 
         message = pubsub.get_message()
-        self.assertEqual(message['type'], 'message')
-        self.assertEqual(message['data'], b'hello')
+        assert message['type'] == 'message'
+        assert message['data'] == b'hello'
 
         pubsub.unsubscribe(self.channel)

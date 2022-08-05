@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -20,9 +19,10 @@
 import os
 from subprocess import PIPE, STDOUT, Popen
 from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir
+from typing import Sequence
 
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.utils.decorators import apply_defaults
+from airflow.sensors.base import BaseSensorOperator
+from airflow.utils.context import Context
 
 
 class BashSensor(BaseSensorOperator):
@@ -32,31 +32,23 @@ class BashSensor(BaseSensorOperator):
 
     :param bash_command: The command, set of commands or reference to a
         bash script (must be '.sh') to be executed.
-    :type bash_command: str
 
     :param env: If env is not None, it must be a mapping that defines the
         environment variables for the new process; these are used instead
         of inheriting the current process environment, which is the default
         behavior. (templated)
-    :type env: dict
     :param output_encoding: output encoding of bash command.
-    :type output_encoding: str
     """
 
-    template_fields = ('bash_command', 'env')
+    template_fields: Sequence[str] = ('bash_command', 'env')
 
-    @apply_defaults
-    def __init__(self,
-                 bash_command,
-                 env=None,
-                 output_encoding='utf-8',
-                 *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *, bash_command, env=None, output_encoding='utf-8', **kwargs):
+        super().__init__(**kwargs)
         self.bash_command = bash_command
         self.env = env
         self.output_encoding = output_encoding
 
-    def poke(self, context):
+    def poke(self, context: Context):
         """
         Execute the bash command in a temporary directory
         which will be cleaned afterwards
@@ -71,19 +63,21 @@ class BashSensor(BaseSensorOperator):
                 script_location = tmp_dir + "/" + fname
                 self.log.info("Temporary script location: %s", script_location)
                 self.log.info("Running command: %s", bash_command)
-                sp = Popen(
+
+                with Popen(
                     ['bash', fname],
-                    stdout=PIPE, stderr=STDOUT,
-                    close_fds=True, cwd=tmp_dir,
-                    env=self.env, preexec_fn=os.setsid)
+                    stdout=PIPE,
+                    stderr=STDOUT,
+                    close_fds=True,
+                    cwd=tmp_dir,
+                    env=self.env,
+                    preexec_fn=os.setsid,
+                ) as resp:
+                    if resp.stdout:
+                        self.log.info("Output:")
+                        for line in iter(resp.stdout.readline, b''):
+                            self.log.info(line.decode(self.output_encoding).strip())
+                    resp.wait()
+                    self.log.info("Command exited with return code %s", resp.returncode)
 
-                self.sp = sp
-
-                self.log.info("Output:")
-                for line in iter(sp.stdout.readline, b''):
-                    line = line.decode(self.output_encoding).strip()
-                    self.log.info(line)
-                sp.wait()
-                self.log.info("Command exited with return code %s", sp.returncode)
-
-                return not sp.returncode
+                    return not resp.returncode

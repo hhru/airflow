@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -16,16 +15,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""This module is deprecated. Please use `airflow.operators.python`."""
+"""This module is deprecated. Please use :mod:`airflow.operators.python`."""
 
 import warnings
 
-# pylint: disable=unused-import
 from airflow.operators.python import (  # noqa
-    BranchPythonOperator, PythonOperator, PythonVirtualenvOperator, ShortCircuitOperator,
+    BranchPythonOperator,
+    PythonOperator,
+    PythonVirtualenvOperator,
+    ShortCircuitOperator,
 )
 
 warnings.warn(
-    "This module is deprecated. Please use `airflow.operators.python`.",
-    DeprecationWarning, stacklevel=2
+    "This module is deprecated. Please use `airflow.operators.python`.", DeprecationWarning, stacklevel=2
 )
