@@ -140,8 +140,6 @@ require Breeze Docker image to be build locally.
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | check-airflow-config-yaml-consistent                   | Checks for consistency between config.yml and default_config.cfg |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
-| check-airflow-providers-have-extras                    | Checks providers available when declared by extras in setup.py   |         |
-+--------------------------------------------------------+------------------------------------------------------------------+---------+
 | check-apache-license-rat                               | Check if licenses are OK for Apache                              |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | check-base-operator-usage                              | * Check BaseOperator[Link] core imports                          |         |
@@ -205,9 +203,17 @@ require Breeze Docker image to be build locally.
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | check-system-tests-present                             | Check if system tests have required segments of code             |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
+| check-system-tests-tocs                                | Check that system tests is properly added                        |         |
++--------------------------------------------------------+------------------------------------------------------------------+---------+
 | check-xml                                              | Check XML files with xmllint                                     |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | codespell                                              | Run codespell to check for common misspellings in files          |         |
++--------------------------------------------------------+------------------------------------------------------------------+---------+
+| compile-www-assets                                     | Compile www assets                                               |         |
++--------------------------------------------------------+------------------------------------------------------------------+---------+
+| compile-www-assets-dev                                 | Compile www assets in dev mode                                   |         |
++--------------------------------------------------------+------------------------------------------------------------------+---------+
+| create-missing-init-py-files-tests                     | Create missing init.py files in tests                            |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | debug-statements                                       | Detect accidentally committed debug statements                   |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
@@ -246,8 +252,7 @@ require Breeze Docker image to be build locally.
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | lint-helm-chart                                        | Lint Helm Chart                                                  |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
-| lint-javascript                                        | * ESLint against airflow/ui                                      | *       |
-|                                                        | * ESLint against current UI JavaScript files                     |         |
+| lint-javascript                                        | ESLint against airflow/ui                                        |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | lint-json-schema                                       | * Lint JSON Schema files with JSON Schema                        |         |
 |                                                        | * Lint NodePort Service with JSON Schema                         |         |
@@ -286,6 +291,8 @@ require Breeze Docker image to be build locally.
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | trailing-whitespace                                    | Remove trailing whitespace at end of line                        |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
+| ts-compile-and-lint-javascript                         | TS types generation and ESLint against current UI files          |         |
++--------------------------------------------------------+------------------------------------------------------------------+---------+
 | update-breeze-cmd-output                               | Update output of breeze commands in BREEZE.rst                   |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | update-breeze-readme-config-hash                       | Update Breeze README.md with config files hash                   |         |
@@ -299,8 +306,6 @@ require Breeze Docker image to be build locally.
 | update-local-yml-file                                  | Update mounts in the local yml file                              |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | update-migration-references                            | Update migration ref doc                                         | *       |
-+--------------------------------------------------------+------------------------------------------------------------------+---------+
-| update-providers-dependencies                          | Update cross-dependencies for providers packages                 |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+
 | update-setup-cfg-file                                  | Update setup.cfg file with all licenses                          |         |
 +--------------------------------------------------------+------------------------------------------------------------------+---------+

@@ -433,7 +433,7 @@ def prepare_base_build_command(image_params: CommonBuildParams, verbose: bool) -
                 "--builder",
                 image_params.builder,
                 "--progress=tty",
-                "--push" if image_params.push_image else "--load",
+                "--push" if image_params.push else "--load",
             ]
         )
     else:
@@ -496,13 +496,6 @@ def build_cache(
     build_command_result: Union[CompletedProcess, CalledProcessError] = CompletedProcess(
         args=[], returncode=0
     )
-    cmd = ['docker', 'buildx', 'inspect', 'airflow_cache']
-    buildx_command_result = run_command(
-        cmd, verbose=verbose, dry_run=dry_run, text=True, check=False, enabled_output_group=not parallel
-    )
-    if buildx_command_result and buildx_command_result.returncode != 0:
-        next_cmd = ['docker', 'buildx', 'create', '--name', 'airflow_cache']
-        run_command(next_cmd, verbose=verbose, text=True, check=False, enabled_output_group=not parallel)
     for platform in image_params.platforms:
         platform_image_params = deepcopy(image_params)
         # override the platform in the copied params to only be single platform per run
@@ -521,6 +514,17 @@ def build_cache(
         if build_command_result.returncode != 0:
             break
     return build_command_result
+
+
+def make_sure_builder_configured(parallel: bool, params: CommonBuildParams, dry_run: bool, verbose: bool):
+    if params.builder != 'default':
+        cmd = ['docker', 'buildx', 'inspect', params.builder]
+        buildx_command_result = run_command(
+            cmd, verbose=verbose, dry_run=dry_run, text=True, check=False, enabled_output_group=not parallel
+        )
+        if buildx_command_result and buildx_command_result.returncode != 0:
+            next_cmd = ['docker', 'buildx', 'create', '--name', params.builder]
+            run_command(next_cmd, verbose=verbose, text=True, check=False, enabled_output_group=not parallel)
 
 
 def set_value_to_default_if_not_set(env: Dict[str, str], name: str, default: str):
@@ -546,6 +550,7 @@ def update_expected_environment_variables(env: Dict[str, str]) -> None:
     set_value_to_default_if_not_set(env, 'AIRFLOW_EXTRAS', "")
     set_value_to_default_if_not_set(env, 'ANSWER', "")
     set_value_to_default_if_not_set(env, 'BREEZE', "true")
+    set_value_to_default_if_not_set(env, 'BREEZE_INIT_COMMAND', "")
     set_value_to_default_if_not_set(env, 'CI', "false")
     set_value_to_default_if_not_set(env, 'CI_BUILD_ID', "0")
     set_value_to_default_if_not_set(env, 'CI_EVENT_TYPE', "pull_request")
@@ -683,7 +688,7 @@ def warm_up_docker_builder(image_params: CommonBuildParams, verbose: bool, dry_r
     get_console().print(f"[info]Warming up the {image_params.builder} builder for syntax: {docker_syntax}")
     warm_up_image_param = deepcopy(image_params)
     warm_up_image_param.image_tag = "warmup"
-    warm_up_image_param.push_image = False
+    warm_up_image_param.push = False
     build_command = prepare_base_build_command(image_params=warm_up_image_param, verbose=verbose)
     warm_up_command = []
     warm_up_command.extend(["docker"])
@@ -699,11 +704,11 @@ LABEL description="test warmup image"
         dry_run=dry_run,
         cwd=AIRFLOW_SOURCES_ROOT,
         text=True,
+        check=False,
         enabled_output_group=True,
     )
     if warm_up_command_result.returncode != 0:
         get_console().print(
-            f"[error]Error {warm_up_command_result.returncode} when warming up builder:"
+            f"[warning]Warning {warm_up_command_result.returncode} when warming up builder:"
             f" {warm_up_command_result.stdout} {warm_up_command_result.stderr}"
         )
-        sys.exit(warm_up_command_result.returncode)

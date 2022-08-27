@@ -24,6 +24,7 @@ import sys
 import unittest
 from copy import deepcopy
 from os.path import dirname, relpath
+from pathlib import Path
 from textwrap import wrap
 from typing import Dict, List
 
@@ -44,8 +45,9 @@ PY39 = sys.version_info >= (3, 9)
 
 logger = logging.getLogger(__name__)
 
-version = '2.3.3'
+version = '2.3.4'
 
+AIRFLOW_SOURCES_ROOT = Path(__file__).parent.resolve()
 my_dir = dirname(__file__)
 
 
@@ -109,7 +111,9 @@ class CompileAssets(Command):
 
     def run(self) -> None:
         """Run a command to compile and build assets."""
-        subprocess.check_call('./airflow/www/compile_assets.sh')
+        www_dir = AIRFLOW_SOURCES_ROOT / "airflow" / "www"
+        subprocess.check_call(['yarn', 'install', '--frozen-lockfile'], cwd=str(www_dir))
+        subprocess.check_call(['yarn', 'run', 'build'], cwd=str(www_dir))
 
 
 class ListExtras(Command):
@@ -276,6 +280,9 @@ deprecated_api = [
     'requests>=2.26.0',
 ]
 doc = [
+    # Astroid 2.12.* breaks documentation building
+    # We can remove the limit here after https://github.com/PyCQA/astroid/issues/1708 is solved
+    'astroid<2.12.0',
     'click>=8.0',
     'sphinx>=4.4.0',
     # Docutils 0.17.0 converts generated <div class="section"> into <section> and breaks our doc formatting
@@ -578,7 +585,7 @@ zendesk = [
 # mypyd which does not support installing the types dynamically with --install-types
 mypy_dependencies = [
     # TODO: upgrade to newer versions of MyPy continuously as they are released
-    'mypy==0.910',
+    'mypy==0.971',
     'types-boto',
     'types-certifi',
     'types-croniter',
@@ -920,12 +927,27 @@ def is_package_excluded(package: str, exclusion_list: List[str]) -> bool:
     return any(package.startswith(excluded_package) for excluded_package in exclusion_list)
 
 
+def remove_provider_limits(package: str) -> str:
+    """
+    Removes the limit for providers in devel_all to account for pre-release and development packages.
+
+    :param package: package name (beginning of it)
+    :return: true if package should be excluded
+    """
+    return (
+        package.split(">=")[0]
+        if package.startswith("apache-airflow-providers") and ">=" in package
+        else package
+    )
+
+
+devel = [remove_provider_limits(package) for package in devel]
 devel_all = [
-    package
+    remove_provider_limits(package)
     for package in devel_all
     if not is_package_excluded(package=package, exclusion_list=PACKAGES_EXCLUDED_FOR_ALL)
 ]
-
+devel_hadoop = [remove_provider_limits(package) for package in devel_hadoop]
 devel_ci = devel_all
 
 

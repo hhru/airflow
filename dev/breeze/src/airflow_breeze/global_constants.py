@@ -55,7 +55,7 @@ ALLOWED_INTEGRATIONS = [
 ALLOWED_KUBERNETES_MODES = ['image']
 ALLOWED_KUBERNETES_VERSIONS = ['v1.24.0', 'v1.23.6', 'v1.22.9', 'v1.21.12', 'v1.20.15']
 ALLOWED_KIND_VERSIONS = ['v0.14.0']
-ALLOWED_HELM_VERSIONS = ['v3.6.3']
+ALLOWED_HELM_VERSIONS = ['v3.9.2']
 ALLOWED_EXECUTORS = ['KubernetesExecutor', 'CeleryExecutor', 'LocalExecutor', 'CeleryKubernetesExecutor']
 ALLOWED_KIND_OPERATIONS = ['start', 'stop', 'restart', 'status', 'deploy', 'test', 'shell', 'k9s']
 ALLOWED_CONSTRAINTS_MODES_CI = ['constraints-source-providers', 'constraints', 'constraints-no-providers']
@@ -184,6 +184,7 @@ LOAD_DEFAULT_CONNECTIONS = False
 PRESERVE_VOLUMES = False
 CLEANUP_CONTEXT = False
 INIT_SCRIPT_FILE = ""
+BREEZE_INIT_COMMAND = ""
 DRY_RUN_DOCKER = False
 INSTALL_AIRFLOW_VERSION = ""
 SQLITE_URL = "sqlite:////root/airflow/airflow.db"
@@ -225,18 +226,12 @@ FILES_FOR_REBUILD_CHECK = [
     'setup.cfg',
     'Dockerfile.ci',
     '.dockerignore',
-    'scripts/docker/compile_www_assets.sh',
     'scripts/docker/common.sh',
     'scripts/docker/install_additional_dependencies.sh',
     'scripts/docker/install_airflow.sh',
     'scripts/docker/install_airflow_dependencies_from_branch_tip.sh',
     'scripts/docker/install_from_docker_context_files.sh',
     'scripts/docker/install_mysql.sh',
-    'airflow/www/package.json',
-    'airflow/www/yarn.lock',
-    'airflow/www/webpack.config.js',
-    'airflow/ui/package.json',
-    'airflow/ui/yarn.lock',
 ]
 
 ENABLED_SYSTEMS = ""
@@ -244,7 +239,7 @@ ENABLED_SYSTEMS = ""
 CURRENT_KUBERNETES_MODES = ['image']
 CURRENT_KUBERNETES_VERSIONS = ['v1.24.0', 'v1.23.6', 'v1.22.9', 'v1.21.12', 'v1.20.15']
 CURRENT_KIND_VERSIONS = ['v0.14.0']
-CURRENT_HELM_VERSIONS = ['v3.6.3']
+CURRENT_HELM_VERSIONS = ['v3.9.2']
 CURRENT_EXECUTORS = ['KubernetesExecutor']
 
 DEFAULT_KUBERNETES_MODE = CURRENT_KUBERNETES_MODES[0]
@@ -265,8 +260,6 @@ MIN_DOCKER_COMPOSE_VERSION = "1.29.0"
 
 AIRFLOW_SOURCES_FROM = "."
 AIRFLOW_SOURCES_TO = "/opt/airflow"
-AIRFLOW_SOURCES_WWW_FROM = "./airflow/www"
-AIRFLOW_SOURCES_WWW_TO = "/opt/airflow/airflow/www"
 
 DEFAULT_EXTRAS = [
     # BEGINNING OF EXTRAS LIST UPDATED BY PRE COMMIT
