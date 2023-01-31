@@ -1501,6 +1501,9 @@ def initialize_config() -> AirflowConfigParser:
 
         local_conf.read(AIRFLOW_CONFIG)
 
+        if 'AIRFLOW_DEV_CONF' in os.environ:
+            local_conf.read(os.environ['AIRFLOW_DEV_CONF'])
+
         if local_conf.has_option("core", "AIRFLOW_HOME"):
             msg = (
                 "Specifying both AIRFLOW_HOME environment variable and airflow_home "

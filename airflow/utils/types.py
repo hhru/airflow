@@ -19,6 +19,8 @@ from __future__ import annotations
 import enum
 from typing import TYPE_CHECKING
 
+from airflow.utils.timezone import make_aware, make_naive
+
 from airflow.typing_compat import TypedDict
 
 if TYPE_CHECKING:
@@ -56,7 +58,7 @@ class DagRunType(str, enum.Enum):
         return self.value
 
     def generate_run_id(self, logical_date: datetime) -> str:
-        return f"{self}__{logical_date.isoformat()}"
+        return f"{self}__{make_aware(make_naive(logical_date)).isoformat()}"
 
     @staticmethod
     def from_run_id(run_id: str) -> DagRunType:
