@@ -122,7 +122,7 @@ apache-airflow-providers-hashicorp==3.4.1
 apache-airflow-providers-http==4.4.2
 apache-airflow-providers-imap==3.2.2
 apache-airflow-providers-influxdb==2.2.1
-apache-airflow-providers-jdbc==4.0.0
+apache-airflow-providers-jdbc==3.3.0
 apache-airflow-providers-jenkins==3.3.1
 apache-airflow-providers-microsoft-azure==6.1.2
 apache-airflow-providers-microsoft-mssql==3.4.1
