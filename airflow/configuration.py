@@ -1994,8 +1994,12 @@ def load_standard_airflow_configuration(airflow_config_parser: AirflowConfigPars
 
     """
     global AIRFLOW_HOME
-    log.info("Reading the config from %s", AIRFLOW_CONFIG)
-    airflow_config_parser.read(AIRFLOW_CONFIG)
+    if 'AIRFLOW_DEV_CONF' in os.environ:
+        log.info("Reading the config from AIRFLOW_DEV_CONF")
+        airflow_config_parser.read(os.environ['AIRFLOW_DEV_CONF'])
+    else:
+        log.info("Reading the config from %s", AIRFLOW_CONFIG)
+        airflow_config_parser.read(AIRFLOW_CONFIG)
     if airflow_config_parser.has_option("core", "AIRFLOW_HOME"):
         msg = (
             "Specifying both AIRFLOW_HOME environment variable and airflow_home "
